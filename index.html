@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shader Studio</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <span class="brand">Shader&nbsp;Studio</span>
+        <span class="hint">WebGL2 imaging pipeline</span>
+        <span class="spacer"></span>
+        <button id="btn-export" class="ghost">Export PNG</button>
+      </header>
+      <aside id="toolbar"></aside>
+      <main id="stage">
+        <canvas id="gl"></canvas>
+      </main>
+      <aside id="rightpanel">
+        <section id="properties"></section>
+        <section id="layers"></section>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,135 @@
+:root {
+  --bg: #1e1e22;
+  --panel: #26262b;
+  --panel-2: #2e2e34;
+  --line: #3a3a42;
+  --text: #d7d7db;
+  --muted: #8a8a93;
+  --accent: #4c8bf5;
+  --accent-2: #6aa0ff;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  overflow: hidden;
+  user-select: none;
+}
+
+#app {
+  display: grid;
+  grid-template-columns: 56px 1fr 280px;
+  grid-template-rows: 40px 1fr;
+  grid-template-areas:
+    "top top top"
+    "tools stage right";
+  height: 100vh;
+}
+
+#topbar {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+#topbar .brand { font-weight: 600; letter-spacing: .2px; }
+#topbar .hint { color: var(--muted); font-size: 11px; }
+#topbar .spacer { flex: 1; }
+
+#toolbar {
+  grid-area: tools;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+  gap: 6px;
+}
+
+#stage {
+  grid-area: stage;
+  position: relative;
+  overflow: hidden;
+  background:
+    repeating-conic-gradient(#2a2a30 0% 25%, #232328 0% 50%) 50% / 24px 24px;
+}
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+#rightpanel {
+  grid-area: right;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#rightpanel section { overflow-y: auto; }
+#properties { border-bottom: 1px solid var(--line); flex: 0 0 auto; max-height: 55%; }
+#layers { flex: 1 1 auto; }
+
+.tool-btn {
+  width: 40px; height: 40px;
+  display: grid; place-items: center;
+  background: var(--panel-2);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tool-btn:hover { color: var(--text); }
+.tool-btn.active { color: #fff; border-color: var(--accent); background: #313845; }
+.tool-btn svg { width: 20px; height: 20px; }
+
+.panel-head {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--muted); padding: 10px 12px 6px;
+}
+
+.row { display: flex; align-items: center; gap: 8px; padding: 5px 12px; }
+.row label { width: 78px; color: var(--muted); font-size: 12px; }
+.row input[type="range"] { flex: 1; accent-color: var(--accent); }
+.row .val { width: 38px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.row select, .row input[type="text"], .row input[type="number"] {
+  flex: 1; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px;
+}
+.row input[type="color"] { width: 32px; height: 24px; border: 1px solid var(--line); background: none; border-radius: 6px; }
+
+button.ghost {
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 5px 10px; cursor: pointer;
+}
+button.ghost:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+button.primary:hover { background: var(--accent-2); }
+
+.layer {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; margin: 4px 8px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  cursor: pointer;
+}
+.layer.active { border-color: var(--accent); }
+.layer .eye { width: 18px; text-align: center; color: var(--muted); cursor: pointer; }
+.layer .eye.on { color: var(--text); }
+.layer .name { flex: 1; }
+.layer .thumb { width: 30px; height: 30px; border-radius: 4px; background: #111; border: 1px solid var(--line); }
+
+.adj-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--muted);
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 999px; padding: 2px 8px; margin: 2px;
+}
+.adj-chip button { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0; }
+.muted { color: var(--muted); }
+.section-actions { display: flex; gap: 6px; padding: 6px 10px; flex-wrap: wrap; }
+hr.sep { border: none; border-top: 1px solid var(--line); margin: 8px 0; }
