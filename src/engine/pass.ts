@@ -3,7 +3,7 @@
  * samplers, sets uniforms, and draws the fullscreen quad into a target (or the screen).
  * Every blend, adjustment, brush stamp and material shader goes through here.
  */
-import { ctx, drawQuad, program } from "./gl";
+import { ctx, drawQuad, program, uniformType } from "./gl";
 import { GLTexture, RenderTarget } from "./texture";
 import type { Uniforms, UniformValue } from "../types";
 
@@ -65,13 +65,28 @@ function setUniforms(prog: WebGLProgram, uniforms: Uniforms): void {
   for (const [name, value] of Object.entries(uniforms)) {
     const loc = gl.getUniformLocation(prog, name);
     if (!loc) continue;
-    applyUniform(gl, loc, value);
+    applyUniform(gl, loc, value, uniformType(prog, name));
   }
 }
 
-function applyUniform(gl: WebGL2RenderingContext, loc: WebGLUniformLocation, value: UniformValue): void {
+// GL enums for the scalar uniform types we need to distinguish (int/bool vs float).
+const INT_TYPES = new Set<number>([
+  0x1404, // INT
+  0x8b56, // BOOL
+  0x8b5e, // SAMPLER_2D
+  0x8b60 // SAMPLER_CUBE
+]);
+
+function applyUniform(
+  gl: WebGL2RenderingContext,
+  loc: WebGLUniformLocation,
+  value: UniformValue,
+  type: number | undefined
+): void {
   if (typeof value === "number") {
-    gl.uniform1f(loc, value);
+    // int/bool uniforms MUST use uniform1i — uniform1f silently fails on them.
+    if (type !== undefined && INT_TYPES.has(type)) gl.uniform1i(loc, Math.round(value));
+    else gl.uniform1f(loc, value);
   } else if (typeof value === "boolean") {
     gl.uniform1i(loc, value ? 1 : 0);
   } else if (value instanceof Float32Array) {
