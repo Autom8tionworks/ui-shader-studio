@@ -56,6 +56,11 @@ export function cropDocument(doc: Document, x: number, y: number, w: number, h: 
     layer.height = h;
   }
 
+  resizeDocBuffers(doc, w, h);
+}
+
+/** Reallocate the document's shared scratch/accum targets and selection at a new size. */
+export function resizeDocBuffers(doc: Document, w: number, h: number): void {
   doc.width = w;
   doc.height = h;
   const float = ctx().floatTargets;
@@ -66,4 +71,27 @@ export function cropDocument(doc: Document, x: number, y: number, w: number, h: 
   doc.scratch = new PingPong(w, h, float);
   doc.brushScratch = new RenderTarget(w, h, false);
   doc.selection = new Selection(w, h);
+}
+
+/** Read a straight-alpha texture's pixels (GL bottom-up order) for snapshotting. */
+export function readTexturePixels(tex: GLTexture, w: number, h: number): Uint8Array {
+  const gl = ctx().gl;
+  const rt = new RenderTarget(w, h, false);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, rt.fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex.tex, 0);
+  const px = new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  rt.dispose();
+  return px;
+}
+
+/** Recreate a texture from raw pixels (same bottom-up order readTexturePixels produced). */
+export function textureFromPixels(px: Uint8Array, w: number, h: number): GLTexture {
+  const gl = ctx().gl;
+  const t = new GLTexture(w, h);
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  return t;
 }

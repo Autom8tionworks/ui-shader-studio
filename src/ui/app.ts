@@ -8,7 +8,7 @@ import { Document } from "../core/document";
 import { Layer } from "../core/layer";
 import { History } from "../core/history";
 import { composite, View } from "../core/compositor";
-import { cropDocument } from "../core/crop";
+import { cropDocument, resizeDocBuffers, readTexturePixels, textureFromPixels } from "../core/crop";
 import { downloadDocument } from "../core/exporter";
 import { Timeline } from "../core/timeline";
 import { recordCanvas, downloadBlob, videoExportSupported } from "../core/videoExport";
@@ -213,11 +213,51 @@ export class App {
   }
 
   crop(x: number, y: number, w: number, h: number): void {
-    cropDocument(this.doc, x, y, w, h);
-    this.cropTool.rect = { x: 0, y: 0, w: this.doc.width, h: this.doc.height };
-    this.fitView();
-    this.requestRender();
-    this.rebuildUI();
+    const doc = this.doc;
+    const oldW = doc.width;
+    const oldH = doc.height;
+    // Snapshot pre-crop pixels (and masks) so the crop can be undone.
+    const snaps = doc.layers.map((l) => ({
+      id: l.id,
+      pixels: readTexturePixels(l.texture, l.width, l.height),
+      mask: l.mask ? readTexturePixels(l.mask, l.width, l.height) : null
+    }));
+
+    const applyCrop = () => {
+      cropDocument(doc, x, y, w, h);
+      this.cropTool.rect = { x: 0, y: 0, w: doc.width, h: doc.height };
+      this.fitView();
+      this.requestRender();
+      this.rebuildUI();
+    };
+    applyCrop();
+
+    this.history.pushCommand(
+      () => {
+        // undo: restore previous size + pixels into the same layer instances
+        for (const s of snaps) {
+          const l = doc.layers.find((L) => L.id === s.id);
+          if (!l) continue;
+          l.texture.dispose();
+          l.texture = textureFromPixels(s.pixels, oldW, oldH);
+          l.width = oldW;
+          l.height = oldH;
+          if (s.mask) {
+            if (l.mask) l.mask.dispose();
+            l.mask = textureFromPixels(s.mask, oldW, oldH);
+          } else if (l.mask) {
+            l.mask.dispose();
+            l.mask = null;
+          }
+        }
+        resizeDocBuffers(doc, oldW, oldH);
+        this.cropTool.rect = { x: 0, y: 0, w: oldW, h: oldH };
+        this.fitView();
+        this.requestRender();
+        this.rebuildUI();
+      },
+      applyCrop
+    );
   }
 
   selectAll(): void {
