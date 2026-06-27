@@ -14,6 +14,7 @@ export interface ToolContext {
   doc: Document;
   requestRender: () => void;
   beginHistory: () => void;
+  rebuildUI: () => void;
 }
 
 export interface Tool {

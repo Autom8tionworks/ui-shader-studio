@@ -1,16 +1,19 @@
 /**
- * Document = canvas size + ordered layer list + shared scratch render targets. It owns no
- * rendering logic itself (that's the compositor) but provides the targets passes use.
+ * Document = canvas size + ordered layer list + shared scratch render targets + the active
+ * selection. It owns no rendering logic itself (that's the compositor) but provides the
+ * targets and selection that passes and tools use.
  */
 import { PingPong, RenderTarget } from "../engine/texture";
 import { ctx } from "../engine/gl";
 import { Layer } from "./layer";
+import { Selection } from "./selection";
 
 export class Document {
   width: number;
   height: number;
   layers: Layer[] = [];
   activeLayerId = -1;
+  selection: Selection;
 
   /** Accumulator the compositor blends each layer onto. */
   accum: PingPong;
@@ -26,6 +29,7 @@ export class Document {
     this.accum = new PingPong(width, height, float);
     this.scratch = new PingPong(width, height, float);
     this.brushScratch = new RenderTarget(width, height, false);
+    this.selection = new Selection(width, height);
   }
 
   get activeLayer(): Layer | null {

@@ -1,7 +1,7 @@
 /**
- * App wires the engine, document, tools, view and panels together and owns the dirty-driven
- * render loop. Panels call back into App; App re-renders panels when document structure
- * changes and asks the compositor to redraw when anything visual changes.
+ * App wires the engine, document, tools, view and panels together and owns the render loop.
+ * The loop is dirty-driven, except when a visible layer has an animated shader filter, in
+ * which case it advances time and redraws every frame.
  */
 import { createContext } from "../engine/gl";
 import { Document } from "../core/document";
@@ -12,6 +12,12 @@ import { cropDocument } from "../core/crop";
 import { Tool, PointerInfo } from "../tools/tool";
 import { BrushTool } from "../tools/brushTool";
 import { TransformTool } from "../tools/transformTool";
+import { SelectTool } from "../tools/selectTool";
+import { FillTool } from "../tools/fillTool";
+import { GradientTool } from "../tools/gradientTool";
+import { EyedropperTool } from "../tools/eyedropperTool";
+import { TextTool } from "../tools/textTool";
+import { ShapeTool } from "../tools/shapeTool";
 import { Viewport } from "./viewport";
 import { buildToolbar } from "./toolbar";
 import { buildLayersPanel } from "./layersPanel";
@@ -22,49 +28,72 @@ export class App {
   doc: Document;
   history = new History();
   view: View = { zoom: 1, panX: 0, panY: 0 };
+  mouse: [number, number, number, number] = [0, 0, 0, 0];
 
   tools: Record<string, Tool>;
   brush: BrushTool;
   eraser: BrushTool;
   transform: TransformTool;
+  select: SelectTool;
+  fill: FillTool;
+  gradient: GradientTool;
+  eyedropper: EyedropperTool;
+  text: TextTool;
+  shape: ShapeTool;
   currentToolId = "brush";
 
   private dirty = true;
   private viewport: Viewport;
+  private lastTime = performance.now();
 
   constructor() {
     const canvas = document.getElementById("gl") as HTMLCanvasElement;
     createContext(canvas);
 
-    // Starter document.
     const W = 900;
     const H = 600;
     this.doc = new Document(W, H);
-    const bg = new Layer("Background", W, H, gradientLayer(W, H));
-    const shapes = new Layer("Shapes", W, H, shapesLayer(W, H));
-    this.doc.addLayer(bg, false);
-    this.doc.addLayer(shapes, true);
+    this.doc.addLayer(new Layer("Background", W, H, gradientLayer(W, H)), false);
+    this.doc.addLayer(new Layer("Shapes", W, H, shapesLayer(W, H)), true);
 
     this.brush = new BrushTool();
     this.eraser = new BrushTool();
     this.eraser.id = "eraser";
     this.eraser.settings.erase = true;
     this.transform = new TransformTool();
+    this.select = new SelectTool();
+    this.fill = new FillTool();
+    this.gradient = new GradientTool();
+    this.eyedropper = new EyedropperTool();
+    this.eyedropper.onPick = (rgb) => {
+      this.brush.settings.color = rgb;
+      this.fill.color = rgb;
+      this.shape.color = rgb;
+      this.rebuildUI();
+    };
+    this.text = new TextTool();
+    this.shape = new ShapeTool();
+
     this.tools = {
       brush: this.brush,
       eraser: this.eraser,
-      transform: this.transform
+      transform: this.transform,
+      select: this.select,
+      fill: this.fill,
+      gradient: this.gradient,
+      eyedropper: this.eyedropper,
+      text: this.text,
+      shape: this.shape
     };
 
     this.viewport = new Viewport(canvas, this);
     this.fitView();
-
     this.rebuildUI();
     this.loop();
     window.addEventListener("keydown", (e) => this.onKey(e));
   }
 
-  get currentTool(): Tool {
+  get currentTool(): Tool | undefined {
     return this.tools[this.currentToolId];
   }
 
@@ -81,6 +110,7 @@ export class App {
     return {
       doc: this.doc,
       requestRender: () => this.requestRender(),
+      rebuildUI: () => this.rebuildUI(),
       beginHistory: () => {
         const l = this.doc.activeLayer;
         if (l) this.history.snapshot(l);
@@ -88,16 +118,27 @@ export class App {
     };
   }
 
+  setMouse(p: PointerInfo, down: boolean): void {
+    this.mouse[0] = p.x;
+    this.mouse[1] = p.y;
+    if (down) {
+      this.mouse[2] = p.x;
+      this.mouse[3] = p.y;
+    }
+  }
+
   dispatchPointer(kind: "down" | "move" | "up", p: PointerInfo): void {
+    this.setMouse(p, kind === "down");
+    if (this.currentTool || kind !== "up") this.requestRender(); // keep iMouse live
     const tool = this.currentTool;
-    if (!tool) return; // e.g. the Crop tool is panel-driven, not pointer-driven
+    if (!tool) return;
     const c = this.toolContext();
     if (kind === "down") tool.onPointerDown(p, c);
     else if (kind === "move") tool.onPointerMove(p, c);
     else tool.onPointerUp(p, c);
   }
 
-  // ---- layer operations used by panels ----
+  // ---- layer ops ----
   addBlankLayer(): void {
     const l = new Layer(`Layer ${this.doc.layers.length + 1}`, this.doc.width, this.doc.height);
     this.doc.addLayer(l, true);
@@ -116,6 +157,15 @@ export class App {
     this.rebuildUI();
   }
 
+  selectAll(): void {
+    this.doc.selection.selectAll();
+    this.requestRender();
+  }
+  deselect(): void {
+    this.doc.selection.clear();
+    this.requestRender();
+  }
+
   fitView(): void {
     const stage = document.getElementById("stage")!;
     const r = stage.getBoundingClientRect();
@@ -127,13 +177,10 @@ export class App {
   }
 
   exportPNG(): void {
-    // Force a composite, then read the GL canvas into a PNG (already premultiplied-correct
-    // because the present pass un-premultiplied for display).
-    composite(this.doc, this.view);
+    composite(this.doc, this.view, { mouse: this.mouse });
     const src = document.getElementById("gl") as HTMLCanvasElement;
-    const url = src.toDataURL("image/png");
     const a = document.createElement("a");
-    a.href = url;
+    a.href = src.toDataURL("image/png");
     a.download = "shader-studio.png";
     a.click();
     this.requestRender();
@@ -141,6 +188,8 @@ export class App {
 
   private onKey(e: KeyboardEvent): void {
     const mod = e.ctrlKey || e.metaKey;
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === "TEXTAREA" || tag === "INPUT") return; // don't steal typing
     if (mod && e.key.toLowerCase() === "z") {
       e.preventDefault();
       if (e.shiftKey) this.history.redo((id) => this.doc.layers.find((l) => l.id === id));
@@ -148,8 +197,21 @@ export class App {
       this.requestRender();
       return;
     }
+    if (mod && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      this.selectAll();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "d") {
+      e.preventDefault();
+      this.deselect();
+      return;
+    }
     if (mod) return;
-    const map: Record<string, string> = { b: "brush", e: "eraser", v: "transform", c: "crop" };
+    const map: Record<string, string> = {
+      b: "brush", e: "eraser", v: "transform", c: "crop", m: "select",
+      g: "gradient", k: "fill", i: "eyedropper", t: "text", u: "shape", s: "shader"
+    };
     const id = map[e.key.toLowerCase()];
     if (id) this.setTool(id);
   }
@@ -161,9 +223,22 @@ export class App {
   }
 
   private loop = (): void => {
+    const now = performance.now();
+    const dt = (now - this.lastTime) / 1000;
+    this.lastTime = now;
+
+    let animating = false;
+    for (const l of this.doc.layers) {
+      if (l.visible && l.shaderFilter?.animated) {
+        l.shaderFilter.time += dt;
+        animating = true;
+      }
+    }
+    if (animating) this.dirty = true;
+
     if (this.dirty) {
       this.viewport.resizeToDisplay();
-      composite(this.doc, this.view);
+      composite(this.doc, this.view, { mouse: this.mouse });
       this.dirty = false;
     }
     requestAnimationFrame(this.loop);

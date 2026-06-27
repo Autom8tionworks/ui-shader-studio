@@ -1,18 +1,20 @@
 /**
  * GPU brush. On each pointer move we interpolate stamp centers between the last and current
- * point (so fast strokes stay continuous), run the brush shader reading the active layer and
- * writing into brushScratch, then copy the result back into the layer texture.
+ * point (so fast strokes stay continuous), run the brush shader reading the active paint
+ * target (layer color or its mask) and writing into brushScratch, then copy the result
+ * back. Painting is clipped to the active selection (for color, not for mask editing).
  */
 import { runPass } from "../engine/pass";
+import { whiteTexture } from "../engine/util";
 import { QUAD_VERT } from "../engine/shaders/quad.vert";
 import { BRUSH_FRAG, MAX_STAMPS } from "../engine/shaders/brush";
 import { Tool, PointerInfo, ToolContext } from "./tool";
 
 export interface BrushSettings {
-  size: number; // diameter in document px
-  hardness: number; // 0..1
-  flow: number; // 0..1
-  color: [number, number, number]; // 0..1
+  size: number;
+  hardness: number;
+  flow: number;
+  color: [number, number, number];
   erase: boolean;
 }
 
@@ -54,9 +56,11 @@ export class BrushTool implements Tool {
     const layer = c.doc.activeLayer;
     if (!layer) return;
     const doc = c.doc;
+    const editing = layer.editingMask && !!layer.mask;
+    const target = layer.paintTarget();
 
     const radiusPx = this.settings.size * 0.5;
-    const spacing = Math.max(radiusPx * 0.25, 1); // ~25% of radius between dabs
+    const spacing = Math.max(radiusPx * 0.25, 1);
     const dx = x1 - x0;
     const dy = y1 - y0;
     const dist = Math.hypot(dx, dy);
@@ -66,18 +70,25 @@ export class BrushTool implements Tool {
     let count = 0;
     for (let i = 0; i < steps && count < MAX_STAMPS; i++) {
       const t = steps === 1 ? 0 : i / (steps - 1);
-      const px = x0 + dx * t;
-      const py = y0 + dy * t;
-      stamps[count * 2] = px / doc.width;
-      stamps[count * 2 + 1] = py / doc.height;
+      stamps[count * 2] = (x0 + dx * t) / doc.width;
+      stamps[count * 2 + 1] = (y0 + dy * t) / doc.height;
       count++;
     }
 
-    // Run brush into scratch reading the layer, then adopt back into the layer.
+    const useSel = doc.selection.active && !editing;
+    const color: [number, number, number] = editing
+      ? this.settings.erase
+        ? [0, 0, 0]
+        : [1, 1, 1]
+      : this.settings.color;
+
     runPass({
       vert: QUAD_VERT,
       frag: BRUSH_FRAG,
-      inputs: { u_layer: layer.texture },
+      inputs: {
+        u_layer: target,
+        u_sel: useSel ? doc.selection.texture : whiteTexture()
+      },
       uniforms: {
         u_stamps: stamps,
         u_count: count,
@@ -85,11 +96,12 @@ export class BrushTool implements Tool {
         u_aspect: doc.width / doc.height,
         u_hardness: this.settings.hardness,
         u_flow: this.settings.flow,
-        u_color: this.settings.color,
-        u_erase: this.settings.erase ? 1 : 0
+        u_color: color,
+        u_erase: editing ? 0 : this.settings.erase ? 1 : 0,
+        u_useSel: useSel ? 1 : 0
       },
       target: doc.brushScratch
     });
-    layer.adoptFrom(doc.brushScratch);
+    layer.copyInto(target, doc.brushScratch);
   }
 }

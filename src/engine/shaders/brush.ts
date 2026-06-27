@@ -2,6 +2,7 @@
  * Brush stamping. We render the existing layer plus a set of soft-round stamps along the
  * current stroke segment into a fresh target, then copy it back into the layer texture.
  * Up to 64 stamp positions per dispatch keep strokes smooth without a draw per dab.
+ * Coverage is multiplied by an optional selection mask so painting respects selections.
  */
 import { GLSL_COMMON } from "./quad.vert";
 
@@ -13,14 +14,16 @@ in vec2 v_uv;
 out vec4 frag;
 
 uniform sampler2D u_layer;     // current layer (straight alpha)
+uniform sampler2D u_sel;       // selection mask (r); 1x1 white when no selection
 uniform vec2  u_stamps[${MAX_STAMPS}]; // stamp centers in uv space
 uniform int   u_count;         // active stamps this dispatch
-uniform float u_radius;        // brush radius in uv (relative to width)
+uniform float u_radius;        // brush radius in uv (relative to height)
 uniform float u_aspect;        // width/height to keep stamps round
 uniform float u_hardness;      // 0..1
 uniform float u_flow;          // 0..1 per-stamp opacity
 uniform vec3  u_color;
 uniform float u_erase;         // 1.0 = erase, 0.0 = paint
+uniform float u_useSel;        // 1.0 = clip to selection
 ${GLSL_COMMON}
 
 void main() {
@@ -35,15 +38,14 @@ void main() {
     cover = max(cover, a * u_flow);        // max = no double-darkening within one stroke
   }
 
+  if (u_useSel > 0.5) cover *= texture(u_sel, v_uv).r;
+
   if (u_erase > 0.5) {
-    // Erase reduces alpha.
     float na = base.a * (1.0 - cover);
     frag = vec4(base.rgb, na);
   } else {
-    // Paint straight color over the layer.
-    vec3 rgb = mix(base.rgb, u_color, cover);
     float na = base.a + cover * (1.0 - base.a);
-    rgb = na > 1e-4 ? mix(base.rgb * base.a, u_color, cover) / na : u_color;
+    vec3 rgb = na > 1e-4 ? mix(base.rgb * base.a, u_color, cover) / na : u_color;
     frag = vec4(rgb, na);
   }
 }

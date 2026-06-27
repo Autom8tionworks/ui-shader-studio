@@ -133,3 +133,24 @@ button.primary:hover { background: var(--accent-2); }
 .muted { color: var(--muted); }
 .section-actions { display: flex; gap: 6px; padding: 6px 10px; flex-wrap: wrap; }
 hr.sep { border: none; border-top: 1px solid var(--line); margin: 8px 0; }
+
+/* ShaderToy editor */
+textarea.code {
+  width: calc(100% - 24px);
+  margin: 4px 12px;
+  background: #16161a;
+  color: #d7e0ea;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: 12px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding: 8px;
+  resize: vertical;
+  tab-size: 2;
+}
+.shader-error {
+  color: #ff7a7a;
+  font: 11px/1.4 ui-monospace, monospace;
+  white-space: pre-wrap;
+  padding: 0 12px;
+}
+.row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }

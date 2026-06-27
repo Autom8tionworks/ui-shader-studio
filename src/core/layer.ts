@@ -1,6 +1,8 @@
 /**
  * A Layer owns a source texture and a non-destructive adjustment stack plus an optional
- * material. Brush strokes write into `texture`; adjustments/material are re-applied every
+ * material and an optional ShaderToy-style filter. It may also carry a mask texture whose
+ * red channel multiplies the layer's alpha at composite time. Brush strokes write into
+ * `texture` (or `mask` when editing the mask); adjustments/material/filter re-apply every
  * composite and never mutate the source.
  */
 import { GLTexture, RenderTarget } from "../engine/texture";
@@ -21,6 +23,14 @@ export interface MaterialState {
   lightAngle: number; // radians
 }
 
+export interface ShaderFilterState {
+  name: string;
+  code: string;
+  time: number;
+  animated: boolean;
+  mix: number; // 0..1 blend with original
+}
+
 let _id = 0;
 
 export class Layer {
@@ -34,6 +44,9 @@ export class Layer {
   blendMode: BlendMode = BlendMode.Normal;
   adjustments: Adjustment[] = [];
   material: MaterialState | null = null;
+  shaderFilter: ShaderFilterState | null = null;
+  mask: GLTexture | null = null;
+  editingMask = false;
 
   constructor(name: string, width: number, height: number, source?: TexImageSource) {
     this.id = ++_id;
@@ -43,15 +56,45 @@ export class Layer {
     this.texture = new GLTexture(width, height, source ?? null);
   }
 
-  /** Replace the layer pixels from a render target (used after a brush stroke). */
+  /** Replace this layer's color pixels from a render target (after a brush stroke). */
   adoptFrom(rt: RenderTarget): void {
+    this.copyInto(this.texture, rt);
+  }
+
+  /** Copy a render target into an arbitrary owned texture (color or mask). */
+  copyInto(target: GLTexture, rt: RenderTarget): void {
     const gl = ctx().gl;
-    // Copy rt's color attachment into this.texture via framebuffer blit-by-copy.
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, rt.fbo);
-    gl.bindTexture(gl.TEXTURE_2D, this.texture.tex);
+    gl.bindTexture(gl.TEXTURE_2D, target.tex);
     gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, rt.width, rt.height, 0);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
     gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
+  addMask(): void {
+    if (this.mask) return;
+    // A white (fully visible) mask.
+    const cv = document.createElement("canvas");
+    cv.width = this.width;
+    cv.height = this.height;
+    const g = cv.getContext("2d")!;
+    g.fillStyle = "#fff";
+    g.fillRect(0, 0, this.width, this.height);
+    this.mask = new GLTexture(this.width, this.height, cv);
+    this.editingMask = true;
+  }
+
+  removeMask(): void {
+    if (this.mask) {
+      this.mask.dispose();
+      this.mask = null;
+    }
+    this.editingMask = false;
+  }
+
+  /** The texture a paint tool should write to right now. */
+  paintTarget(): GLTexture {
+    return this.editingMask && this.mask ? this.mask : this.texture;
   }
 
   addAdjustment(type: AdjustmentType): Adjustment {
@@ -66,6 +109,7 @@ export class Layer {
 
   dispose(): void {
     this.texture.dispose();
+    if (this.mask) this.mask.dispose();
   }
 }
 

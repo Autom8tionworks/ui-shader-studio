@@ -1,7 +1,8 @@
 /**
  * The compositor turns a Document into pixels. For each visible layer it runs the
- * adjustment chain + optional material into scratch, then blends onto the accumulator.
- * Finally it presents the accumulator to the screen under the view transform.
+ * adjustment chain + optional material + optional ShaderToy filter into scratch, applies
+ * the layer mask, then blends onto the accumulator. Finally it presents the accumulator to
+ * the screen under the view transform.
  */
 import { ctx } from "../engine/gl";
 import { runPass } from "../engine/pass";
@@ -16,6 +17,7 @@ import {
   COPY
 } from "../engine/shaders/adjust";
 import { getMaterial } from "../engine/shaders/material";
+import { buildShaderToy } from "../engine/shaders/shadertoy";
 import { Document } from "./document";
 import { Layer } from "./layer";
 
@@ -25,14 +27,18 @@ export interface View {
   panY: number;
 }
 
+export interface FrameInput {
+  mouse: [number, number, number, number];
+}
+
 const PRESENT_FRAG = /* glsl */ `#version 300 es
 precision highp float;
 in vec2 v_uv;
 out vec4 frag;
 uniform sampler2D u_tex;     // accumulator (premultiplied)
-uniform vec2  u_viewport;    // px
-uniform vec2  u_docSize;     // px
-uniform vec2  u_offset;      // doc top-left in viewport px (y-up)
+uniform vec2  u_viewport;
+uniform vec2  u_docSize;
+uniform vec2  u_offset;
 uniform float u_zoom;
 void main() {
   vec2 screenPx = v_uv * u_viewport;
@@ -40,24 +46,52 @@ void main() {
   vec2 uv = docPx / u_docSize;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { frag = vec4(0.0); return; }
   vec4 c = texture(u_tex, uv);
-  // un-premultiply for display.
   frag = vec4(c.a > 1e-4 ? c.rgb / c.a : c.rgb, c.a);
 }
 `;
 
-export function composite(doc: Document, view: View): void {
-  const c = ctx();
-  const gl = c.gl;
+const MASK_APPLY = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 frag;
+uniform sampler2D u_tex;
+uniform sampler2D u_mask;
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  frag = vec4(c.rgb, c.a * texture(u_mask, v_uv).r);
+}
+`;
 
-  // 1. Clear accumulator to transparent.
+const SELECTION_OVERLAY = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 frag;
+uniform sampler2D u_sel;
+uniform vec2  u_viewport;
+uniform vec2  u_docSize;
+uniform vec2  u_offset;
+uniform float u_zoom;
+uniform vec2  u_texel;
+void main() {
+  vec2 screenPx = v_uv * u_viewport;
+  vec2 uv = (screenPx - u_offset) / u_zoom / u_docSize;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { frag = vec4(0.0); return; }
+  float m = texture(u_sel, uv).r;
+  float e = abs(m - texture(u_sel, uv + vec2(u_texel.x, 0.0)).r)
+          + abs(m - texture(u_sel, uv + vec2(0.0, u_texel.y)).r);
+  if (e > 0.2) { frag = vec4(1.0, 1.0, 1.0, 1.0); return; }   // border
+  if (m < 0.5) { frag = vec4(0.0, 0.0, 0.0, 0.28); return; }  // dim unselected
+  frag = vec4(0.0);
+}
+`;
+
+export function composite(doc: Document, view: View, frame?: FrameInput): void {
+  const gl = ctx().gl;
   doc.accum.read.clear(0, 0, 0, 0);
 
-  // 2. Blend each visible layer bottom-to-top.
   for (const layer of doc.layers) {
     if (!layer.visible || layer.opacity <= 0) continue;
-    const processed = processLayer(doc, layer);
-
-    // Blend processed (straight alpha) over accumulator (premultiplied) -> write.
+    const processed = processLayer(doc, layer, frame);
     runPass({
       vert: QUAD_VERT,
       frag: BLEND_FRAG,
@@ -68,12 +102,10 @@ export function composite(doc: Document, view: View): void {
     doc.accum.swap();
   }
 
-  // 3. Present accumulator to screen under the view transform.
   const vw = gl.drawingBufferWidth;
   const vh = gl.drawingBufferHeight;
   const scaledW = doc.width * view.zoom;
   const scaledH = doc.height * view.zoom;
-  // Center the document then apply pan. Note GL viewport is y-up.
   const offX = (vw - scaledW) / 2 + view.panX;
   const offY = (vh - scaledH) / 2 - view.panY;
 
@@ -95,13 +127,28 @@ export function composite(doc: Document, view: View): void {
     target: null,
     screenSize: [vw, vh]
   });
+
+  if (doc.selection.active) {
+    runPass({
+      vert: QUAD_VERT,
+      frag: SELECTION_OVERLAY,
+      inputs: { u_sel: doc.selection.texture },
+      uniforms: {
+        u_viewport: [vw, vh],
+        u_docSize: [doc.width, doc.height],
+        u_offset: [offX, offY],
+        u_zoom: view.zoom,
+        u_texel: [1 / doc.width, 1 / doc.height]
+      },
+      target: null,
+      screenSize: [vw, vh],
+      blend: true
+    });
+  }
 }
 
-/** Run a layer's adjustment chain + material into a scratch target; return that target. */
-function processLayer(doc: Document, layer: Layer): RenderTarget {
+function processLayer(doc: Document, layer: Layer, frame?: FrameInput): RenderTarget {
   const sc = doc.scratch;
-
-  // Seed scratch.read with the raw layer texture via a copy pass.
   runPass({ vert: QUAD_VERT, frag: COPY, inputs: { u_tex: layer.texture }, target: sc.write });
   sc.swap();
 
@@ -123,7 +170,6 @@ function processLayer(doc: Document, layer: Layer): RenderTarget {
         pass(sc, ADJ_INVERT, { u_amount: adj.params.amount });
         break;
       case "blur":
-        // separable: horizontal then vertical
         pass(sc, ADJ_BLUR, { u_texel: texel, u_dir: [1, 0], u_radius: adj.params.radius });
         pass(sc, ADJ_BLUR, { u_texel: texel, u_dir: [0, 1], u_radius: adj.params.radius });
         break;
@@ -141,6 +187,38 @@ function processLayer(doc: Document, layer: Layer): RenderTarget {
         u_light: [Math.cos(layer.material.lightAngle), Math.sin(layer.material.lightAngle)]
       });
     }
+  }
+
+  if (layer.shaderFilter) {
+    const sf = layer.shaderFilter;
+    try {
+      runPass({
+        vert: QUAD_VERT,
+        frag: buildShaderToy(sf.code),
+        inputs: { iChannel0: sc.read.texture },
+        uniforms: {
+          iResolution: [doc.width, doc.height, 1],
+          iTime: sf.time,
+          iMouse: frame?.mouse ?? [0, 0, 0, 0],
+          uMix: sf.mix
+        },
+        target: sc.write
+      });
+      sc.swap();
+    } catch (e) {
+      // A broken user shader shouldn't kill the whole composite.
+      console.warn("Shader filter error:", (e as Error).message);
+    }
+  }
+
+  if (layer.mask) {
+    runPass({
+      vert: QUAD_VERT,
+      frag: MASK_APPLY,
+      inputs: { u_tex: sc.read.texture, u_mask: layer.mask },
+      target: sc.write
+    });
+    sc.swap();
   }
 
   return sc.read;
