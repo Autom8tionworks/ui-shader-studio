@@ -22,6 +22,8 @@ export interface ToolContext {
   zoom: number;
   /** Switch back to the default Select/Move tool (after a one-shot tool). */
   returnToSelect: () => void;
+  /** Lift the active layer's pixels inside the current selection into a new movable layer. */
+  liftSelection: () => void;
 }
 
 export interface Tool {

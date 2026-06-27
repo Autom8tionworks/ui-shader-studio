@@ -124,12 +124,12 @@ function cropOptions(root: HTMLElement, app: App): void {
 
 function lassoOptions(root: HTMLElement, app: App): void {
   checkbox(root, "Magnetic (snap to edges)", app.lasso.magnetic, (on) => { app.lasso.magnetic = on; });
-  slider(root, "Snap radius", app.lasso.radius, 4, 40, 1, (v) => { app.lasso.radius = v; });
+  slider(root, "Snap radius", app.lasso.radius, 6, 80, 1, (v) => { app.lasso.radius = v; });
   actions(root, [
     ghost("Select All", () => app.selectAll()),
     ghost("Deselect", () => app.deselect())
   ]);
-  note(root, "Trace around an object and release to close the selection. Snaps to the nearest edges.");
+  note(root, "Trace around an object on the active layer; on release it snaps to the edges and lifts it onto its own layer so you can move it.");
 }
 
 function selectOptions(root: HTMLElement, app: App): void {

@@ -10,7 +10,7 @@ import { Tool, PointerInfo, ToolContext } from "./tool";
 export class LassoTool implements Tool {
   id = "lasso";
   magnetic = true;
-  radius = 18; // px search window for edge snapping
+  radius = 28; // px search window for edge snapping
 
   private points: { x: number; y: number }[] = [];
   private edge: Uint8Array | null = null;
@@ -44,14 +44,16 @@ export class LassoTool implements Tool {
     if (!this.dragging) return;
     this.dragging = false;
     this.points.push(this.snap(p.x, p.y));
-    if (this.points.length >= 3) c.doc.selection.setPolygon(this.points);
+    const enough = this.points.length >= 3;
+    if (enough) c.doc.selection.setPolygon(this.points);
     else c.doc.selection.clear();
     this.points = [];
     this.last = null;
     this.edge = null;
     c.requestRender();
-    c.rebuildUI();
-    c.returnToSelect();
+    // Turn the traced region into a movable object (lift to its own layer + Move tool).
+    if (enough) c.liftSelection();
+    else c.returnToSelect();
   }
 
   /** Snap (x,y) (document px, y-up) to the strongest edge within the search radius. */
@@ -62,17 +64,20 @@ export class LassoTool implements Tool {
     const e = this.edge;
     if (!e) return { x: bx, y: by };
     const rad = this.radius;
-    let best = -1, rX = bx, rY = by;
+    let best = -1, rX = bx, rY = by, maxMag = 0;
     for (let dy = -rad; dy <= rad; dy++) {
       for (let dx = -rad; dx <= rad; dx++) {
         const X = bx + dx, Y = by + dy;
         if (X < 0 || Y < 0 || X >= w || Y >= h) continue;
         const m = e[Y * w + X];
-        // Prefer strong edges, with a slight bias toward the cursor to avoid jumping far.
-        const score = m - 0.6 * Math.hypot(dx, dy);
+        if (m > maxMag) maxMag = m;
+        // Prefer strong edges; small distance penalty so it can reach a nearby edge.
+        const score = m - 0.18 * Math.hypot(dx, dy);
         if (score > best) { best = score; rX = X; rY = Y; }
       }
     }
+    // No real edge nearby → keep the raw cursor point (acts as a freehand lasso there).
+    if (maxMag < 18) return { x: bx, y: by };
     return { x: rX, y: rY };
   }
 }

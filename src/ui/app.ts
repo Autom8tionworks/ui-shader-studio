@@ -8,6 +8,9 @@ import { Document } from "../core/document";
 import { Layer } from "../core/layer";
 import { History } from "../core/history";
 import { composite, View } from "../core/compositor";
+import { runPass } from "../engine/pass";
+import { QUAD_VERT } from "../engine/shaders/quad.vert";
+import { CUTOUT_FRAG, ERASE_FRAG } from "../engine/shaders/cutout";
 import { cropDocument, resizeDocBuffers, readTexturePixels, textureFromPixels } from "../core/crop";
 import { downloadDocument } from "../core/exporter";
 import { Timeline } from "../core/timeline";
@@ -126,6 +129,7 @@ export class App {
       addLayer: (layer: Layer) => this.addLayerUndoable(layer),
       zoom: this.view.zoom,
       returnToSelect: () => this.setTool("transform"),
+      liftSelection: () => this.liftSelectionToLayer(),
       beginHistory: () => {
         const l = this.doc.activeLayer;
         if (l) this.history.snapshot(l);
@@ -271,6 +275,54 @@ export class App {
   deselect(): void {
     this.doc.selection.clear();
     this.requestRender();
+  }
+
+  /** Cut the active layer's pixels inside the selection into a new movable layer (one undo step). */
+  liftSelectionToLayer(): void {
+    const doc = this.doc;
+    const src = doc.activeLayer;
+    if (!doc.selection.active || !src) {
+      this.setTool("transform");
+      return;
+    }
+    const w = doc.width, h = doc.height;
+    const beforeSrc = readTexturePixels(src.texture, w, h);
+
+    // 1) Cutout = source pixels inside the selection -> new layer.
+    runPass({ vert: QUAD_VERT, frag: CUTOUT_FRAG, inputs: { u_layer: src.texture, u_mask: doc.selection.texture }, target: doc.brushScratch });
+    const cut = new Layer(`${src.name} cutout`, w, h);
+    cut.copyInto(cut.texture, doc.brushScratch);
+
+    // 2) Erase those pixels from the source so the object truly moves out.
+    runPass({ vert: QUAD_VERT, frag: ERASE_FRAG, inputs: { u_layer: src.texture, u_mask: doc.selection.texture }, target: doc.brushScratch });
+    src.copyInto(src.texture, doc.brushScratch);
+    const afterSrc = readTexturePixels(src.texture, w, h);
+
+    doc.selection.clear();
+    const idx = doc.layers.length;
+    doc.addLayer(cut, true);
+    this.setTool("transform");
+    this.requestRender();
+    this.rebuildUI();
+
+    this.history.pushCommand(
+      () => {
+        src.texture.dispose();
+        src.texture = textureFromPixels(beforeSrc, w, h);
+        doc.layers = doc.layers.filter((l) => l !== cut);
+        doc.activeLayerId = src.id;
+        this.requestRender();
+        this.rebuildUI();
+      },
+      () => {
+        src.texture.dispose();
+        src.texture = textureFromPixels(afterSrc, w, h);
+        if (!doc.layers.includes(cut)) doc.layers.splice(idx, 0, cut);
+        doc.activeLayerId = cut.id;
+        this.requestRender();
+        this.rebuildUI();
+      }
+    );
   }
 
   // ---- import ----
