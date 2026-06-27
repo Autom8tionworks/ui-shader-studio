@@ -12,6 +12,7 @@ import { cropDocument } from "../core/crop";
 import { downloadDocument } from "../core/exporter";
 import { Timeline } from "../core/timeline";
 import { recordCanvas, downloadBlob, videoExportSupported } from "../core/videoExport";
+import { serializeProject, deserializeProject, applyTimeline } from "../core/project";
 import { buildTimeline } from "./timelinePanel";
 import { Tool, PointerInfo } from "../tools/tool";
 import { BrushTool } from "../tools/brushTool";
@@ -330,6 +331,41 @@ export class App {
     }
   }
 
+  // ---- project save / open (parametric .json) ----
+  saveProject(): void {
+    const json = serializeProject(this.doc, this.timeline);
+    downloadBlob(new Blob([json], { type: "application/json" }), "shader-studio-project.json");
+  }
+
+  openProjectDialog(): void {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json,.json,.ssp";
+    input.onchange = () => {
+      const f = input.files?.[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => void this.loadProjectText(String(reader.result));
+      reader.readAsText(f);
+    };
+    input.click();
+  }
+
+  async loadProjectText(text: string): Promise<void> {
+    try {
+      const { project, doc, indexToId } = await deserializeProject(text);
+      const old = this.doc;
+      this.doc = doc;
+      applyTimeline(this.timeline, project, indexToId);
+      old.dispose();
+      this.fitView();
+      this.requestRender();
+      this.rebuildUI();
+    } catch (e) {
+      alert("Could not open project: " + (e as Error).message);
+    }
+  }
+
   fitView(): void {
     const stage = document.getElementById("stage")!;
     const r = stage.getBoundingClientRect();
@@ -351,6 +387,16 @@ export class App {
     const mod = e.ctrlKey || e.metaKey;
     const tag = (e.target as HTMLElement)?.tagName;
     if (tag === "TEXTAREA" || tag === "INPUT") return;
+    if (mod && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      this.saveProject();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "o") {
+      e.preventDefault();
+      this.openProjectDialog();
+      return;
+    }
     if (mod && e.key.toLowerCase() === "z") {
       e.preventDefault();
       if (e.shiftKey) this.redo();
@@ -386,6 +432,8 @@ export class App {
       const el = document.getElementById(id);
       if (el) el.addEventListener("click", fn);
     };
+    on("btn-save", () => this.saveProject());
+    on("btn-open", () => this.openProjectDialog());
     on("btn-import", () => this.importImageDialog());
     on("btn-webcam", () => void this.addWebcamLayer());
     on("btn-video", () => this.addVideoLayerDialog());
