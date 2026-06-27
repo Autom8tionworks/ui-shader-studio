@@ -93,7 +93,7 @@ export class Viewport {
     }
     if (this.suppressTool) return;
 
-    this.canvas.setPointerCapture(e.pointerId);
+    try { this.canvas.setPointerCapture(e.pointerId); } catch { /* capture is optional; window listeners still handle the drag */ }
     this.toolPointerId = e.pointerId;
     const i = this.info(e);
     this.lastToolInfo = i;

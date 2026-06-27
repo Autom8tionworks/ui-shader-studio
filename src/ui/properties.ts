@@ -12,7 +12,7 @@ import { QUAD_VERT } from "../engine/shaders/quad.vert";
 import { allPresets, saveUserPreset, deleteUserPreset } from "./shaderPresets";
 import { SelectMode } from "../tools/selectTool";
 import { FillMode } from "../tools/fillTool";
-import { ShapeKind } from "../tools/shapeTool";
+import { ShapeKind, SHAPE_OPTIONS, FILLABLE_2D } from "../tools/shapeTool";
 
 export function buildProperties(root: HTMLElement, app: App): void {
   root.innerHTML = "";
@@ -174,19 +174,34 @@ function textOptions(root: HTMLElement, app: App): void {
 
 function shapeOptions(root: HTMLElement, app: App): void {
   const s = app.shape;
-  const kinds: { id: ShapeKind; label: string }[] = [
-    { id: "rect", label: "Rectangle" },
-    { id: "ellipse", label: "Ellipse" },
-    { id: "line", label: "Line" }
-  ];
-  segmented(root, "Shape", kinds.map((k) => k.label), kinds.findIndex((k) => k.id === s.kind), (i) => {
-    s.kind = kinds[i].id;
-    app.rebuildUI();
-  });
+  const r = row(root, "Shape");
+  const sel = document.createElement("select");
+  sel.title = "Pick a shape — basic, 2D, or shaded 3D";
+  let lastGroup = "";
+  let optGroup: HTMLOptGroupElement | null = null;
+  for (const opt of SHAPE_OPTIONS) {
+    if (opt.group !== lastGroup) {
+      optGroup = document.createElement("optgroup");
+      optGroup.label = opt.group;
+      sel.appendChild(optGroup);
+      lastGroup = opt.group;
+    }
+    const o = document.createElement("option");
+    o.value = opt.id;
+    o.textContent = opt.label;
+    if (opt.id === s.kind) o.selected = true;
+    (optGroup ?? sel).appendChild(o);
+  }
+  sel.onchange = () => { s.kind = sel.value as ShapeKind; app.rebuildUI(); };
+  r.appendChild(sel);
+
   colorRow(root, "Color", s.color, (c) => (s.color = c));
-  if (s.kind !== "line") checkbox(root, "Fill", s.fill, (on) => (s.fill = on));
-  if (s.kind === "line" || !s.fill) slider(root, "Stroke", s.lineWidth, 1, 60, 1, (v) => (s.lineWidth = v));
-  note(root, "Drag on the canvas to draw into the active layer.");
+  const fillable = FILLABLE_2D.includes(s.kind);
+  if (fillable) checkbox(root, "Fill", s.fill, (on) => (s.fill = on));
+  if (s.kind === "line" || (fillable && !s.fill)) slider(root, "Stroke", s.lineWidth, 1, 60, 1, (v) => (s.lineWidth = v));
+  note(root, fillable || s.kind === "line"
+    ? "Drag on the canvas to draw into the active layer."
+    : "Drag a box on the canvas — the 3D shape is shaded for you.");
 }
 
 // ---------------- ShaderToy editor ----------------
