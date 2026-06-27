@@ -15,18 +15,10 @@ export function buildTimeline(root: HTMLElement, app: App): void {
   bar.className = "tl-bar";
 
   const play = btn(tl.playing ? "⏸" : "▶", "tl-btn", () => {
-    if (!tl.playing && tl.time >= tl.duration) tl.time = 0;
-    tl.playing = !tl.playing;
-    app.requestRender();
-    app.rebuildUI();
+    app.setTimelinePlaying(!tl.playing);
   });
   const stop = btn("⏹", "tl-btn", () => {
-    tl.playing = false;
-    tl.time = 0;
-    tl.evaluate(app.doc, 0);
-    app.updateTimelinePlayhead();
-    app.requestRender();
-    app.rebuildUI();
+    app.stopTimeline();
   }, "Stop and rewind to the start");
   play.title = tl.playing ? "Pause playback" : "Play the timeline";
   const time = document.createElement("span");
@@ -180,10 +172,7 @@ function scrub(e: PointerEvent, el: HTMLElement, app: App): void {
   document.body.classList.add("tl-scrubbing");
   const move = (clientX: number) => {
     const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    tl.time = frac * tl.duration;
-    tl.evaluate(app.doc, tl.time);
-    app.updateTimelinePlayhead();
-    app.requestRender();
+    app.seekTimeline(frac);
   };
   move(e.clientX);
   const onMove = (ev: PointerEvent) => { ev.preventDefault(); move(ev.clientX); };

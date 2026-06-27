@@ -273,12 +273,18 @@ export class App {
   importImageDialog(): void {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/*";
+    input.accept = "image/*,video/*";
+    input.multiple = true;
     input.onchange = () => {
-      const f = input.files?.[0];
-      if (f) this.importImage(f);
+      for (const f of Array.from(input.files || [])) this.importFile(f);
     };
     input.click();
+  }
+
+  /** Route one file to the right importer (image vs. video), each as its own layer. */
+  importFile(f: File): void {
+    if (f.type.startsWith("video/")) this.addVideoLayer(f);
+    else this.importImage(f);
   }
 
   importImage(file: File): void {
@@ -364,9 +370,9 @@ export class App {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "video/*";
+    input.multiple = true;
     input.onchange = () => {
-      const f = input.files?.[0];
-      if (f) this.addVideoLayer(f);
+      for (const f of Array.from(input.files || [])) this.addVideoLayer(f);
     };
     input.click();
   }
@@ -375,10 +381,16 @@ export class App {
     const url = URL.createObjectURL(file);
     const video = document.createElement("video");
     video.src = url;
-    video.loop = true;
     video.muted = true;
+    video.loop = this.timeline.loop;
     (video as HTMLVideoElement & { playsInline: boolean }).playsInline = true;
-    void video.play().catch(() => {});
+    video.addEventListener("loadedmetadata", () => {
+      if (isFinite(video.duration) && video.duration > 0) {
+        // Match the timeline length to the clip so the scrubber maps to it.
+        this.timeline.duration = Math.min(600, Math.max(0.5, video.duration));
+        this.rebuildUI();
+      }
+    });
     const cv = document.createElement("canvas");
     cv.width = this.doc.width;
     cv.height = this.doc.height;
@@ -386,6 +398,65 @@ export class App {
     const layer = new Layer(name, this.doc.width, this.doc.height);
     layer.liveSource = { kind: "video", video, canvas: cv, url };
     this.addLayerUndoable(layer, true);
+    // Start playing through the transport so play/pause/scrub control it.
+    this.setTimelinePlaying(true);
+  }
+
+  /** First visible imported-video element (the seekable clock for the timeline). */
+  private primaryVideo(): HTMLVideoElement | null {
+    for (const l of this.doc.layers) {
+      if (l.visible && l.liveSource?.kind === "video") return l.liveSource.video;
+    }
+    return null;
+  }
+
+  // ---- timeline transport (also drives imported video layers) ----
+  setTimelinePlaying(on: boolean): void {
+    const tl = this.timeline;
+    if (on && tl.time >= tl.duration) tl.time = 0;
+    tl.playing = on;
+    for (const l of this.doc.layers) {
+      const ls = l.liveSource;
+      if (ls?.kind === "video") {
+        ls.video.loop = tl.loop;
+        if (on) void ls.video.play().catch(() => {});
+        else ls.video.pause();
+      }
+    }
+    this.requestRender();
+    this.rebuildUI();
+  }
+
+  stopTimeline(): void {
+    const tl = this.timeline;
+    tl.playing = false;
+    tl.time = 0;
+    for (const l of this.doc.layers) {
+      const ls = l.liveSource;
+      if (ls?.kind === "video") {
+        ls.video.pause();
+        try { ls.video.currentTime = 0; } catch { /* not seekable yet */ }
+      }
+    }
+    tl.evaluate(this.doc, 0);
+    this.updateTimelinePlayhead();
+    this.requestRender();
+    this.rebuildUI();
+  }
+
+  seekTimeline(frac: number): void {
+    const tl = this.timeline;
+    frac = Math.max(0, Math.min(1, frac));
+    tl.time = frac * tl.duration;
+    for (const l of this.doc.layers) {
+      const ls = l.liveSource;
+      if (ls?.kind === "video" && isFinite(ls.video.duration) && ls.video.duration > 0) {
+        try { ls.video.currentTime = frac * ls.video.duration; } catch { /* ignore */ }
+      }
+    }
+    tl.evaluate(this.doc, tl.time);
+    this.updateTimelinePlayhead();
+    this.requestRender();
   }
 
   // ---- timeline video export ----
@@ -401,6 +472,10 @@ export class App {
     tl.time = 0;
     const playback = new Promise<void>((res) => { tl.onComplete = () => res(); });
     tl.playing = true;
+    for (const l of this.doc.layers) {
+      const ls = l.liveSource;
+      if (ls?.kind === "video") { ls.video.loop = false; try { ls.video.currentTime = 0; } catch { /* */ } void ls.video.play().catch(() => {}); }
+    }
     this.requestRender();
     try {
       const blob = await recordCanvas(canvas, tl.fps, () => playback);
@@ -566,7 +641,18 @@ export class App {
     }
 
     if (this.timeline.playing) {
-      this.timeline.advance(dt);
+      const vid = this.primaryVideo();
+      if (vid && isFinite(vid.duration) && vid.duration > 0) {
+        vid.loop = this.timeline.loop;
+        this.timeline.time = Math.min(vid.currentTime, this.timeline.duration);
+        if (vid.ended && !this.timeline.loop) {
+          const cb = this.timeline.onComplete;
+          this.setTimelinePlaying(false);
+          cb?.();
+        }
+      } else {
+        this.timeline.advance(dt);
+      }
       this.timeline.evaluate(this.doc, this.timeline.time);
       this.updateTimelinePlayhead();
       animating = true;
