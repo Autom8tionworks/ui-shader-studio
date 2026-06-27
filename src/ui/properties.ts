@@ -16,20 +16,37 @@ import { ShapeKind } from "../tools/shapeTool";
 
 export function buildProperties(root: HTMLElement, app: App): void {
   root.innerHTML = "";
-  toolSection(root, app);
+  const id = app.currentToolId;
+  const toolBody = card(root, { key: "tool", title: toolTitle(id), desc: TOOL_DESC[id] ?? "", defaultOpen: true });
+  toolSection(toolBody, app);
+
   const layer = app.doc.activeLayer;
-  if (layer && app.currentToolId !== "shader") {
-    maskSection(root, app, layer);
-    adjustmentsSection(root, app, layer);
-    materialSection(root, app, layer);
-    liquidGlassSection(root, app, layer);
+  if (layer && id !== "shader") {
+    categoryLabel(root, `Active layer — ${layer.name}`);
+    maskSection(card(root, { key: "mask", title: "Layer Mask", desc: "Hide parts of the layer non-destructively — paint the mask to reveal or conceal.", defaultOpen: false, badge: layer.mask ? "on" : undefined }), app, layer);
+    adjustmentsSection(card(root, { key: "adj", title: "Adjustments", desc: "Stackable, non-destructive color tweaks — brightness, hue, blur, invert. Fully reversible.", defaultOpen: true, badge: layer.adjustments.length ? String(layer.adjustments.length) : undefined }), app, layer);
+    materialSection(card(root, { key: "mat", title: "Material", desc: "Light the layer like a real surface — glass, metal, plastic, matte — in real time.", defaultOpen: false, badge: layer.material ? layer.material.id : undefined }), app, layer);
+    liquidGlassSection(card(root, { key: "glass", title: "Liquid Glass", desc: "Animated refraction, frost and caustics that ripple continuously.", defaultOpen: false, badge: layer.liquidGlass ? "live" : undefined }), app, layer);
   }
 }
+
+const TOOL_DESC: Record<string, string> = {
+  brush: "Paint onto the active layer (or its mask). Tune size, edge hardness, flow and color.",
+  eraser: "Erase pixels from the active layer with a soft round brush.",
+  transform: "Move, scale and rotate the active layer. Commits when you release.",
+  crop: "Trim the document (and every layer) to a rectangle.",
+  select: "Make a selection — rectangle, ellipse, lasso or magic wand. Edits stay inside it.",
+  fill: "Flood-fill a region by color, or fill the whole selection with a solid color.",
+  gradient: "Drag to paint a linear gradient between two colors, clipped to the selection.",
+  eyedropper: "Click the canvas to sample a color into the brush, fill and shape tools.",
+  text: "Click to drop editable text on a new layer.",
+  shape: "Drag to draw rectangles, ellipses and lines into the active layer.",
+  shader: "Write a live GLSL fragment shader (ShaderToy-style) that filters the layer."
+};
 
 // ---------------- tool options ----------------
 function toolSection(root: HTMLElement, app: App): void {
   const id = app.currentToolId;
-  head(root, toolTitle(id));
   switch (id) {
     case "brush":
       brushOptions(root, app, app.brush, true);
@@ -254,7 +271,6 @@ function shaderOptions(root: HTMLElement, app: App): void {
 
 // ---------------- mask / adjustments / material ----------------
 function maskSection(root: HTMLElement, app: App, layer: Layer): void {
-  head(root, "Layer Mask");
   if (!layer.mask) {
     actions(root, [ghost("Add Mask", () => { layer.addMask(); app.requestRender(); app.rebuildUI(); })]);
     note(root, "A mask hides parts of the layer without deleting them. Paint it with the brush.");
@@ -265,7 +281,6 @@ function maskSection(root: HTMLElement, app: App, layer: Layer): void {
 }
 
 function adjustmentsSection(root: HTMLElement, app: App, layer: Layer): void {
-  head(root, "Adjustments (non-destructive)");
   const addRow = document.createElement("div");
   addRow.className = "section-actions";
   const sel = document.createElement("select");
@@ -321,7 +336,6 @@ const ADJ_SPECS: Record<AdjustmentType, { key: string; label: string; min: numbe
 };
 
 function materialSection(root: HTMLElement, app: App, layer: Layer): void {
-  head(root, "Material (real-time shader)");
   const r = row(root, "Preset");
   const sel = document.createElement("select");
   const none = document.createElement("option");
@@ -358,7 +372,6 @@ function materialSection(root: HTMLElement, app: App, layer: Layer): void {
 }
 
 function liquidGlassSection(root: HTMLElement, app: App, layer: Layer): void {
-  head(root, "Liquid Glass (animated)");
   checkbox(root, "Enable", !!layer.liquidGlass, (on) => {
     layer.liquidGlass = on ? defaultLiquidGlass() : null;
     app.requestRender();
@@ -393,6 +406,7 @@ function note(root: HTMLElement, text: string): void {
 function row(root: HTMLElement, label: string): HTMLElement {
   const r = document.createElement("div");
   r.className = "row";
+  r.title = TIPS[label] ?? label;
   const l = document.createElement("label");
   l.textContent = label;
   r.appendChild(l);
@@ -441,6 +455,7 @@ function colorRow(root: HTMLElement, label: string, rgb: [number, number, number
 function checkbox(root: HTMLElement, label: string, value: boolean, onChange: (v: boolean) => void): void {
   const r = document.createElement("div");
   r.className = "row";
+  r.title = TIPS[label] ?? label;
   const inp = document.createElement("input");
   inp.type = "checkbox";
   inp.checked = value;
@@ -461,6 +476,7 @@ function segmented(root: HTMLElement, label: string, options: string[], active: 
     const b = document.createElement("button");
     b.className = i === active ? "primary" : "ghost";
     b.textContent = opt;
+    b.title = opt;
     b.onclick = () => onChange(i);
     wrap.appendChild(b);
   });
@@ -472,20 +488,116 @@ function actions(root: HTMLElement, btns: HTMLButtonElement[]): void {
   btns.forEach((b) => wrap.appendChild(b));
   root.appendChild(wrap);
 }
-function ghost(label: string, onClick: () => void): HTMLButtonElement {
+function ghost(label: string, onClick: () => void, tip?: string): HTMLButtonElement {
   const b = document.createElement("button");
   b.className = "ghost";
   b.textContent = label;
+  b.title = tip ?? label;
   b.onclick = onClick;
   return b;
 }
-function primary(label: string, onClick: () => void): HTMLButtonElement {
+function primary(label: string, onClick: () => void, tip?: string): HTMLButtonElement {
   const b = document.createElement("button");
   b.className = "primary";
   b.textContent = label;
+  b.title = tip ?? label;
   b.onclick = onClick;
   return b;
 }
+
+// ---- collapsible cards, categories, tooltips ----
+const OPEN_KEY = "shaderstudio.cards.v1";
+let _openState: Record<string, boolean> | null = null;
+function openState(): Record<string, boolean> {
+  if (!_openState) {
+    try { _openState = JSON.parse(localStorage.getItem(OPEN_KEY) || "{}"); } catch { _openState = {}; }
+  }
+  return _openState!;
+}
+function card(root: HTMLElement, o: { key: string; title: string; desc?: string; defaultOpen?: boolean; badge?: string }): HTMLElement {
+  const st = openState();
+  const isOpen = st[o.key] ?? (o.defaultOpen ?? true);
+  const wrap = document.createElement("div");
+  wrap.className = "ps-card";
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "ps-head";
+  head.title = o.desc || o.title;
+  const chev = document.createElement("span");
+  chev.className = "ps-chevron";
+  chev.textContent = isOpen ? "▾" : "▸";
+  const title = document.createElement("span");
+  title.className = "ps-title";
+  title.textContent = o.title;
+  head.append(chev, title);
+  if (o.badge) {
+    const b = document.createElement("span");
+    b.className = "ps-badge";
+    b.textContent = o.badge;
+    head.appendChild(b);
+  }
+  wrap.appendChild(head);
+  const body = document.createElement("div");
+  body.className = "ps-body";
+  if (!isOpen) body.style.display = "none";
+  if (o.desc) {
+    const d = document.createElement("div");
+    d.className = "ps-desc";
+    d.textContent = o.desc;
+    body.appendChild(d);
+  }
+  wrap.appendChild(body);
+  head.onclick = () => {
+    const nowOpen = body.style.display === "none";
+    body.style.display = nowOpen ? "" : "none";
+    chev.textContent = nowOpen ? "▾" : "▸";
+    st[o.key] = nowOpen;
+    localStorage.setItem(OPEN_KEY, JSON.stringify(st));
+  };
+  root.appendChild(wrap);
+  return body;
+}
+function categoryLabel(root: HTMLElement, text: string): void {
+  const c = document.createElement("div");
+  c.className = "ps-cat";
+  c.textContent = text;
+  root.appendChild(c);
+}
+
+const TIPS: Record<string, string> = {
+  Size: "Brush diameter in pixels",
+  Hardness: "Edge softness — 0 = feathered, 1 = crisp",
+  Flow: "Paint strength applied per stroke",
+  Color: "Pick the color",
+  Start: "Gradient start color",
+  End: "Gradient end color",
+  Opacity: "Overall strength / transparency",
+  Tolerance: "How close in color a pixel must be to be included",
+  Strength: "Effect intensity",
+  Speed: "Animation speed",
+  "Ripple scale": "Wave frequency — higher = finer ripples",
+  Frost: "Frosted-glass blur amount",
+  Tint: "Cool glass color tint",
+  Highlight: "Glassy specular / caustic brightness",
+  Mix: "Blend between the original and the filtered result",
+  "Light angle": "Direction the surface is lit from",
+  Brightness: "Lighten or darken",
+  Contrast: "Push tones apart or together",
+  Hue: "Rotate all colors around the wheel",
+  Saturation: "Color intensity — 0 = grayscale",
+  Lightness: "Lighten or darken without changing hue",
+  Amount: "Effect amount",
+  Radius: "Blur radius in pixels",
+  Stroke: "Line thickness in pixels",
+  Text: "The text to render",
+  Bold: "Use a bold weight",
+  Fill: "Filled shape vs. outline only",
+  Preset: "Choose a preset",
+  Left: "Crop left edge (document px)",
+  Bottom: "Crop bottom edge (document px)",
+  Width: "Crop width (document px)",
+  Height: "Crop height (document px)"
+};
 function fmt(v: number): string {
   return Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(2);
 }

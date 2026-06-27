@@ -12,10 +12,10 @@ export function buildLayersPanel(root: HTMLElement, app: App): void {
 
   const actions = document.createElement("div");
   actions.className = "section-actions";
-  actions.appendChild(button("+ Layer", () => app.addBlankLayer()));
-  actions.appendChild(button("Delete", () => app.deleteActiveLayer()));
-  actions.appendChild(button("Raise", () => reorder(app, 1)));
-  actions.appendChild(button("Lower", () => reorder(app, -1)));
+  actions.appendChild(button("+ Layer", () => app.addBlankLayer(), "Add a new blank layer on top"));
+  actions.appendChild(button("Delete", () => app.deleteActiveLayer(), "Delete the active layer (undoable)"));
+  actions.appendChild(button("Raise", () => reorder(app, 1), "Move the active layer up the stack"));
+  actions.appendChild(button("Lower", () => reorder(app, -1), "Move the active layer down the stack"));
   root.appendChild(actions);
 
   // Front layer (end of array) shown first.
@@ -30,6 +30,7 @@ export function buildLayersPanel(root: HTMLElement, app: App): void {
 
     const eye = document.createElement("span");
     eye.className = "eye" + (layer.visible ? " on" : "");
+    eye.title = layer.visible ? "Hide layer" : "Show layer";
     eye.textContent = layer.visible ? "◉" : "○";
     eye.onclick = (e) => {
       e.stopPropagation();
@@ -42,6 +43,7 @@ export function buildLayersPanel(root: HTMLElement, app: App): void {
     const name = document.createElement("span");
     name.className = "name";
     name.textContent = layer.name;
+    name.title = "Click the row to make this the active layer";
     el.appendChild(name);
 
     root.appendChild(el);
@@ -63,6 +65,7 @@ function opacityRow(app: App, layer: { opacity: number }): HTMLElement {
   const row = document.createElement("div");
   row.className = "row";
   row.innerHTML = `<label>Opacity</label>`;
+  row.title = "How opaque this layer is over the layers below";
   const r = document.createElement("input");
   r.type = "range";
   r.min = "0";
@@ -85,6 +88,7 @@ function blendRow(app: App, layer: { blendMode: BlendMode }): HTMLElement {
   const row = document.createElement("div");
   row.className = "row";
   row.innerHTML = `<label>Blend</label>`;
+  row.title = "Blend mode — how this layer mixes with layers below";
   const sel = document.createElement("select");
   for (const k of Object.keys(BLEND_MODE_NAMES)) {
     const mode = Number(k) as BlendMode;
@@ -102,10 +106,11 @@ function blendRow(app: App, layer: { blendMode: BlendMode }): HTMLElement {
   return row;
 }
 
-function button(label: string, onClick: () => void): HTMLButtonElement {
+function button(label: string, onClick: () => void, tip?: string): HTMLButtonElement {
   const b = document.createElement("button");
   b.className = "ghost";
   b.textContent = label;
+  b.title = tip ?? label;
   b.onclick = onClick;
   return b;
 }

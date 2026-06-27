@@ -226,3 +226,19 @@ button:disabled:hover { border-color: var(--line); }
 }
 .tl-knob:hover { background: #ff6b6b; }
 body.tl-scrubbing { cursor: ew-resize; user-select: none; }
+
+/* Categorized, collapsible property cards */
+.ps-card { border-bottom: 1px solid var(--line); }
+.ps-head {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  background: var(--panel-2); color: var(--text);
+  border: none; border-left: 2px solid transparent;
+  padding: 8px 12px; cursor: pointer; font-size: 12px; font-weight: 600; text-align: left;
+}
+.ps-head:hover { background: #313845; border-left-color: var(--accent); }
+.ps-chevron { color: var(--muted); width: 12px; font-size: 10px; }
+.ps-title { flex: 1; letter-spacing: .2px; }
+.ps-badge { font-size: 10px; font-weight: 600; color: #fff; background: var(--accent); border-radius: 999px; padding: 1px 7px; }
+.ps-body { padding: 2px 0 8px; }
+.ps-desc { color: var(--muted); font-size: 11px; line-height: 1.45; padding: 6px 12px 6px; }
+.ps-cat { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent-2); padding: 12px 12px 2px; font-weight: 700; }

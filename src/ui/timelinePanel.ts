@@ -27,7 +27,8 @@ export function buildTimeline(root: HTMLElement, app: App): void {
     app.updateTimelinePlayhead();
     app.requestRender();
     app.rebuildUI();
-  });
+  }, "Stop and rewind to the start");
+  play.title = tl.playing ? "Pause playback" : "Play the timeline";
   const time = document.createElement("span");
   time.id = "tl-time";
   time.className = "tl-time";
@@ -43,6 +44,7 @@ export function buildTimeline(root: HTMLElement, app: App): void {
   const layer = app.doc.activeLayer;
   const sel = document.createElement("select");
   sel.className = "tl-select";
+  sel.title = "Pick a layer property to animate";
   const targets = layer ? availableTargets(layer) : [];
   if (!layer || targets.length === 0) {
     const o = document.createElement("option");
@@ -70,10 +72,10 @@ export function buildTimeline(root: HTMLElement, app: App): void {
       tl.addKeyframe(app.doc, ch, tl.time);
     }
     app.rebuildUI();
-  }));
+  }, "Animate the selected layer property — adds a keyframe channel"));
 
   bar.append(sep());
-  bar.append(btn("⬇ Export Video", "tl-btn primary-btn", () => void app.exportVideo()));
+  bar.append(btn("⬇ Export Video", "tl-btn primary-btn", () => void app.exportVideo(), "Record the canvas (timeline + live effects) to a WebM video"));
   root.appendChild(bar);
 
   // ---- tracks ----
@@ -105,6 +107,7 @@ export function buildTimeline(root: HTMLElement, app: App): void {
   const knob = document.createElement("div");
   knob.id = "tl-knob";
   knob.className = "tl-knob";
+  knob.title = "Drag to scrub the playhead";
   knob.onpointerdown = (e) => { e.stopPropagation(); scrub(e, scrubBar, app); };
   scrubBar.appendChild(knob);
 
@@ -142,7 +145,7 @@ function channelRow(ch: Channel, app: App): HTMLElement {
   name.textContent = ch.label;
   name.className = "tl-name";
   label.appendChild(name);
-  label.append(btn("Key", "tl-mini", () => { tl.addKeyframe(app.doc, ch, tl.time); app.rebuildUI(); }));
+  label.append(btn("Key", "tl-mini", () => { tl.addKeyframe(app.doc, ch, tl.time); app.rebuildUI(); }, "Set a keyframe here with the property\u2019s current value"));
   label.append(btn("✕", "tl-mini", () => { tl.removeChannel(ch.id); app.rebuildUI(); }));
   row.appendChild(label);
 
@@ -195,10 +198,11 @@ function scrub(e: PointerEvent, el: HTMLElement, app: App): void {
 }
 
 // ---- tiny local DOM helpers ----
-function btn(text: string, cls: string, onClick: () => void): HTMLButtonElement {
+function btn(text: string, cls: string, onClick: () => void, tip?: string): HTMLButtonElement {
   const b = document.createElement("button");
   b.className = cls;
   b.textContent = text;
+  if (tip) b.title = tip;
   b.onclick = onClick;
   return b;
 }
@@ -210,6 +214,7 @@ function sep(): HTMLElement {
 function numField(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {
   const wrap = document.createElement("label");
   wrap.className = "tl-num";
+  wrap.title = label === "Dur" ? "Total animation length (seconds)" : label === "FPS" ? "Frames per second for playback and export" : label;
   wrap.append(document.createTextNode(label));
   const inp = document.createElement("input");
   inp.type = "number";
@@ -228,6 +233,7 @@ function numField(label: string, value: number, min: number, max: number, step: 
 }
 function check(label: string, value: boolean, onChange: (v: boolean) => void): HTMLElement {
   const wrap = document.createElement("label");
+  wrap.title = label === "Loop" ? "Repeat playback when it reaches the end" : label;
   wrap.className = "tl-check";
   const inp = document.createElement("input");
   inp.type = "checkbox";
