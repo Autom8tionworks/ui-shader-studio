@@ -45,6 +45,14 @@ export function defaultLiquidGlass(): LiquidGlassState {
   return { strength: 0.5, speed: 1, scale: 6, frost: 0.3, tint: 0.4, highlight: 0.5, time: 0 };
 }
 
+export interface LiveSource {
+  kind: "camera" | "video";
+  video: HTMLVideoElement;
+  canvas: HTMLCanvasElement;
+  stream?: MediaStream;
+  url?: string;
+}
+
 let _id = 0;
 
 export class Layer {
@@ -60,6 +68,7 @@ export class Layer {
   material: MaterialState | null = null;
   shaderFilter: ShaderFilterState | null = null;
   liquidGlass: LiquidGlassState | null = null;
+  liveSource: LiveSource | null = null;
   mask: GLTexture | null = null;
   editingMask = false;
 
@@ -112,6 +121,21 @@ export class Layer {
     return this.editingMask && this.mask ? this.mask : this.texture;
   }
 
+  /** Pull the current frame from a webcam/video source into the layer texture (contain-fit). */
+  updateLiveTexture(): void {
+    const ls = this.liveSource;
+    if (!ls) return;
+    const v = ls.video;
+    if (v.readyState < 2 || v.videoWidth === 0) return;
+    const g = ls.canvas.getContext("2d")!;
+    g.clearRect(0, 0, this.width, this.height);
+    const scale = Math.min(this.width / v.videoWidth, this.height / v.videoHeight);
+    const w = v.videoWidth * scale;
+    const h = v.videoHeight * scale;
+    g.drawImage(v, (this.width - w) / 2, (this.height - h) / 2, w, h);
+    this.texture.upload(ls.canvas, this.width, this.height);
+  }
+
   addAdjustment(type: AdjustmentType): Adjustment {
     const adj: Adjustment = { type, enabled: true, params: defaultAdjustmentParams(type) };
     this.adjustments.push(adj);
@@ -125,6 +149,11 @@ export class Layer {
   dispose(): void {
     this.texture.dispose();
     if (this.mask) this.mask.dispose();
+    if (this.liveSource) {
+      this.liveSource.stream?.getTracks().forEach((t) => t.stop());
+      this.liveSource.video.pause();
+      if (this.liveSource.url) URL.revokeObjectURL(this.liveSource.url);
+    }
   }
 }
 

@@ -10,6 +10,9 @@ import { History } from "../core/history";
 import { composite, View } from "../core/compositor";
 import { cropDocument } from "../core/crop";
 import { downloadDocument } from "../core/exporter";
+import { Timeline } from "../core/timeline";
+import { recordCanvas, downloadBlob, videoExportSupported } from "../core/videoExport";
+import { buildTimeline } from "./timelinePanel";
 import { Tool, PointerInfo } from "../tools/tool";
 import { BrushTool } from "../tools/brushTool";
 import { TransformTool } from "../tools/transformTool";
@@ -28,6 +31,7 @@ import { gradientLayer, shapesLayer } from "./sample";
 export class App {
   doc: Document;
   history = new History();
+  timeline = new Timeline();
   view: View = { zoom: 1, panX: 0, panY: 0 };
   mouse: [number, number, number, number] = [0, 0, 0, 0];
 
@@ -251,6 +255,81 @@ export class App {
     img.src = url;
   }
 
+  // ---- live input layers ----
+  async addWebcamLayer(): Promise<void> {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.muted = true;
+      (video as HTMLVideoElement & { playsInline: boolean }).playsInline = true;
+      await video.play();
+      const cv = document.createElement("canvas");
+      cv.width = this.doc.width;
+      cv.height = this.doc.height;
+      const layer = new Layer("Webcam", this.doc.width, this.doc.height);
+      layer.liveSource = { kind: "camera", video, canvas: cv, stream };
+      this.addLayerUndoable(layer, true);
+    } catch (e) {
+      alert("Could not access the camera: " + (e as Error).message);
+    }
+  }
+
+  addVideoLayerDialog(): void {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "video/*";
+    input.onchange = () => {
+      const f = input.files?.[0];
+      if (f) this.addVideoLayer(f);
+    };
+    input.click();
+  }
+
+  addVideoLayer(file: File): void {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.src = url;
+    video.loop = true;
+    video.muted = true;
+    (video as HTMLVideoElement & { playsInline: boolean }).playsInline = true;
+    void video.play().catch(() => {});
+    const cv = document.createElement("canvas");
+    cv.width = this.doc.width;
+    cv.height = this.doc.height;
+    const name = file.name.replace(/\.[^.]+$/, "").slice(0, 18) || "Video";
+    const layer = new Layer(name, this.doc.width, this.doc.height);
+    layer.liveSource = { kind: "video", video, canvas: cv, url };
+    this.addLayerUndoable(layer, true);
+  }
+
+  // ---- timeline video export ----
+  async exportVideo(): Promise<void> {
+    if (!videoExportSupported()) {
+      alert("Video export needs a Chromium-based browser (Chrome/Edge).");
+      return;
+    }
+    const canvas = document.getElementById("gl") as HTMLCanvasElement;
+    const tl = this.timeline;
+    const prevLoop = tl.loop;
+    tl.loop = false;
+    tl.time = 0;
+    const playback = new Promise<void>((res) => { tl.onComplete = () => res(); });
+    tl.playing = true;
+    this.requestRender();
+    try {
+      const blob = await recordCanvas(canvas, tl.fps, () => playback);
+      downloadBlob(blob, "shader-studio.webm");
+    } finally {
+      tl.onComplete = null;
+      tl.loop = prevLoop;
+      tl.playing = false;
+      tl.time = 0;
+      this.requestRender();
+      this.rebuildUI();
+    }
+  }
+
   fitView(): void {
     const stage = document.getElementById("stage")!;
     const r = stage.getBoundingClientRect();
@@ -308,6 +387,8 @@ export class App {
       if (el) el.addEventListener("click", fn);
     };
     on("btn-import", () => this.importImageDialog());
+    on("btn-webcam", () => void this.addWebcamLayer());
+    on("btn-video", () => this.addVideoLayerDialog());
     on("btn-undo", () => this.undo());
     on("btn-redo", () => this.redo());
     on("btn-export-png", () => this.export("png"));
@@ -325,16 +406,22 @@ export class App {
     buildToolbar(document.getElementById("toolbar")!, this);
     buildProperties(document.getElementById("properties")!, this);
     buildLayersPanel(document.getElementById("layers")!, this);
+    const tl = document.getElementById("timeline");
+    if (tl) buildTimeline(tl, this);
     this.updateTopbar();
   }
 
   private loop = (): void => {
     const now = performance.now();
-    const dt = (now - this.lastTime) / 1000;
+    const dt = Math.min((now - this.lastTime) / 1000, 0.1);
     this.lastTime = now;
 
     let animating = false;
     for (const l of this.doc.layers) {
+      if (l.liveSource) {
+        l.updateLiveTexture();
+        if (l.visible) animating = true;
+      }
       if (!l.visible) continue;
       if (l.shaderFilter?.animated) {
         l.shaderFilter.time += dt;
@@ -345,6 +432,14 @@ export class App {
         animating = true;
       }
     }
+
+    if (this.timeline.playing) {
+      this.timeline.advance(dt);
+      this.timeline.evaluate(this.doc, this.timeline.time);
+      this.updateTimelinePlayhead();
+      animating = true;
+    }
+
     if (animating) this.dirty = true;
 
     if (this.dirty) {
@@ -354,4 +449,12 @@ export class App {
     }
     requestAnimationFrame(this.loop);
   };
+
+  updateTimelinePlayhead(): void {
+    const ph = document.getElementById("tl-playhead");
+    const tt = document.getElementById("tl-time");
+    const frac = this.timeline.duration > 0 ? this.timeline.time / this.timeline.duration : 0;
+    if (ph) ph.style.left = `calc(150px + ${frac} * (100% - 162px))`;
+    if (tt) tt.textContent = `${this.timeline.time.toFixed(2)} / ${this.timeline.duration.toFixed(1)}s`;
+  }
 }
