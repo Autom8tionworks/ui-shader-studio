@@ -91,6 +91,7 @@ export class App {
     this.wireTopbar();
     this.history.onChange = () => this.updateTopbar();
     this.updateTopbar();
+    this.setupTransfer();
     this.loop();
     window.addEventListener("keydown", (e) => this.onKey(e));
   }
@@ -254,6 +255,41 @@ export class App {
       alert("Could not load that image.");
     };
     img.src = url;
+  }
+
+  // ---- clipboard paste + drag-and-drop ----
+  private setupTransfer(): void {
+    window.addEventListener("paste", (e) => {
+      const items = (e as ClipboardEvent).clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.type.startsWith("image/")) {
+          const f = it.getAsFile();
+          if (f) { e.preventDefault(); this.importImage(f); }
+          return;
+        }
+      }
+    });
+    const dz = document.getElementById("dropzone");
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files");
+    let depth = 0;
+    window.addEventListener("dragenter", (e) => { if (hasFiles(e)) { e.preventDefault(); depth++; dz?.classList.add("show"); } });
+    window.addEventListener("dragover", (e) => { if (hasFiles(e)) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = "copy"; } });
+    window.addEventListener("dragleave", (e) => { if (hasFiles(e)) { depth--; if (depth <= 0) { depth = 0; dz?.classList.remove("show"); } } });
+    window.addEventListener("drop", (e) => { e.preventDefault(); depth = 0; dz?.classList.remove("show"); this.handleDrop(e.dataTransfer); });
+  }
+
+  private handleDrop(dt: DataTransfer | null): void {
+    if (!dt) return;
+    for (const f of Array.from(dt.files)) {
+      if (f.type.startsWith("image/")) this.importImage(f);
+      else if (f.type.startsWith("video/")) this.addVideoLayer(f);
+      else if (f.name.toLowerCase().endsWith(".json") || f.type === "application/json") {
+        const r = new FileReader();
+        r.onload = () => void this.loadProjectText(String(r.result));
+        r.readAsText(f);
+      }
+    }
   }
 
   // ---- live input layers ----

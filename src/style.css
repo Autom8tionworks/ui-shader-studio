@@ -242,3 +242,56 @@ body.tl-scrubbing { cursor: ew-resize; user-select: none; }
 .ps-body { padding: 2px 0 8px; }
 .ps-desc { color: var(--muted); font-size: 11px; line-height: 1.45; padding: 6px 12px 6px; }
 .ps-cat { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent-2); padding: 12px 12px 2px; font-weight: 700; }
+
+/* Drag-and-drop overlay */
+#gl { touch-action: none; }
+#dropzone {
+  position: absolute; inset: 0; display: none;
+  align-items: center; justify-content: center;
+  background: rgba(20, 22, 30, 0.72);
+  border: 3px dashed var(--accent); border-radius: 10px;
+  z-index: 50; pointer-events: none;
+}
+#dropzone.show { display: flex; }
+#dropzone .dz-inner {
+  color: #fff; font-size: 16px; font-weight: 600;
+  background: var(--accent); padding: 14px 22px; border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+}
+
+/* ---- Mobile / narrow screens ---- */
+@media (max-width: 760px), (pointer: coarse) and (max-width: 900px) {
+  #app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 52px 1fr 44vh;
+    grid-template-areas:
+      "top"
+      "tools"
+      "stage"
+      "right";
+  }
+  #topbar { height: auto; flex-wrap: wrap; padding: 6px 8px; gap: 6px; }
+  #topbar .hint { display: none; }
+  #topbar .brand { font-size: 13px; }
+  #topbar .spacer { flex-basis: 100%; height: 0; }
+  #topbar button { padding: 6px 9px; }
+
+  #toolbar {
+    flex-direction: row; align-items: center;
+    overflow-x: auto; overflow-y: hidden;
+    border-right: none; border-bottom: 1px solid var(--line);
+    padding: 6px 8px; gap: 8px;
+  }
+  .tool-btn { flex: 0 0 auto; width: 38px; height: 38px; }
+
+  #rightpanel { border-left: none; border-top: 1px solid var(--line); overflow-y: auto; }
+  #properties { max-height: none; flex: 0 0 auto; }
+
+  /* The timeline dock is hidden on phones to keep the editor usable. */
+  #timeline { display: none; }
+
+  /* Bigger touch targets in panels. */
+  .row { padding: 8px 12px; }
+  .row input[type="range"] { height: 22px; }
+  button.ghost, button.primary { padding: 8px 12px; }
+}
