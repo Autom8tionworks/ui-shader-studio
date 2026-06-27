@@ -18,6 +18,7 @@ import {
 } from "../engine/shaders/adjust";
 import { getMaterial } from "../engine/shaders/material";
 import { buildShaderToy } from "../engine/shaders/shadertoy";
+import { LIQUID_GLASS_FRAG } from "../engine/shaders/liquidGlass";
 import { Document } from "./document";
 import { Layer } from "./layer";
 
@@ -187,6 +188,20 @@ function processLayer(doc: Document, layer: Layer, frame?: FrameInput): RenderTa
         u_light: [Math.cos(layer.material.lightAngle), Math.sin(layer.material.lightAngle)]
       });
     }
+  }
+
+  if (layer.liquidGlass) {
+    const lg = layer.liquidGlass;
+    pass(sc, LIQUID_GLASS_FRAG, {
+      u_texel: texel,
+      u_time: lg.time,
+      u_strength: lg.strength,
+      u_speed: lg.speed,
+      u_scale: lg.scale,
+      u_frost: lg.frost,
+      u_tint: lg.tint,
+      u_highlight: lg.highlight
+    });
   }
 
   if (layer.shaderFilter) {

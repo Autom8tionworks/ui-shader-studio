@@ -335,8 +335,13 @@ export class App {
 
     let animating = false;
     for (const l of this.doc.layers) {
-      if (l.visible && l.shaderFilter?.animated) {
+      if (!l.visible) continue;
+      if (l.shaderFilter?.animated) {
         l.shaderFilter.time += dt;
+        animating = true;
+      }
+      if (l.liquidGlass) {
+        l.liquidGlass.time += dt;
         animating = true;
       }
     }

@@ -31,6 +31,20 @@ export interface ShaderFilterState {
   mix: number; // 0..1 blend with original
 }
 
+export interface LiquidGlassState {
+  strength: number;
+  speed: number;
+  scale: number;
+  frost: number;
+  tint: number;
+  highlight: number;
+  time: number;
+}
+
+export function defaultLiquidGlass(): LiquidGlassState {
+  return { strength: 0.5, speed: 1, scale: 6, frost: 0.3, tint: 0.4, highlight: 0.5, time: 0 };
+}
+
 let _id = 0;
 
 export class Layer {
@@ -45,6 +59,7 @@ export class Layer {
   adjustments: Adjustment[] = [];
   material: MaterialState | null = null;
   shaderFilter: ShaderFilterState | null = null;
+  liquidGlass: LiquidGlassState | null = null;
   mask: GLTexture | null = null;
   editingMask = false;
 

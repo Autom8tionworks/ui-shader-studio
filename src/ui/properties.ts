@@ -4,7 +4,7 @@
  * mask controls.
  */
 import { App } from "./app";
-import { Adjustment, AdjustmentType, ADJUSTMENT_LABELS, Layer } from "../core/layer";
+import { Adjustment, AdjustmentType, ADJUSTMENT_LABELS, Layer, defaultLiquidGlass } from "../core/layer";
 import { MATERIALS } from "../engine/shaders/material";
 import { buildShaderToy } from "../engine/shaders/shadertoy";
 import { program } from "../engine/gl";
@@ -22,6 +22,7 @@ export function buildProperties(root: HTMLElement, app: App): void {
     maskSection(root, app, layer);
     adjustmentsSection(root, app, layer);
     materialSection(root, app, layer);
+    liquidGlassSection(root, app, layer);
   }
 }
 
@@ -353,6 +354,25 @@ function materialSection(root: HTMLElement, app: App, layer: Layer): void {
       slider(root, p.label, layer.material.params[p.key], p.min, p.max, p.step, (v) => { layer.material!.params[p.key] = v; app.requestRender(); });
     }
     slider(root, "Light angle", layer.material.lightAngle, 0, Math.PI * 2, 0.01, (v) => { layer.material!.lightAngle = v; app.requestRender(); });
+  }
+}
+
+function liquidGlassSection(root: HTMLElement, app: App, layer: Layer): void {
+  head(root, "Liquid Glass (animated)");
+  checkbox(root, "Enable", !!layer.liquidGlass, (on) => {
+    layer.liquidGlass = on ? defaultLiquidGlass() : null;
+    app.requestRender();
+    app.rebuildUI();
+  });
+  const lg = layer.liquidGlass;
+  if (lg) {
+    slider(root, "Strength", lg.strength, 0, 1, 0.01, (v) => { lg.strength = v; app.requestRender(); });
+    slider(root, "Speed", lg.speed, 0, 3, 0.01, (v) => { lg.speed = v; app.requestRender(); });
+    slider(root, "Ripple scale", lg.scale, 1, 20, 0.1, (v) => { lg.scale = v; app.requestRender(); });
+    slider(root, "Frost", lg.frost, 0, 1, 0.01, (v) => { lg.frost = v; app.requestRender(); });
+    slider(root, "Tint", lg.tint, 0, 1, 0.01, (v) => { lg.tint = v; app.requestRender(); });
+    slider(root, "Highlight", lg.highlight, 0, 1, 0.01, (v) => { lg.highlight = v; app.requestRender(); });
+    note(root, "Animates continuously. Stacks on top of adjustments and material.");
   }
 }
 
