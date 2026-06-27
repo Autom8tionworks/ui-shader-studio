@@ -1,29 +1,47 @@
 /**
- * Minimal undo/redo for destructive edits (brush strokes). Before a stroke we snapshot the
- * active layer's pixels; undo restores them. Non-destructive adjustments don't need history
- * because their parameters are already reversible via the UI.
+ * Undo/redo. Two kinds of entries share one stack:
+ *  - pixel snapshots: capture a layer's pixels before a destructive edit (brush, fill,
+ *    gradient, shape, transform). Redo is handled by lazily capturing the post-edit pixels.
+ *  - commands: undo/redo closures for structural changes (add / delete / import layer).
  */
 import { ctx } from "../engine/gl";
 import { RenderTarget } from "../engine/texture";
 import { Layer } from "./layer";
 
-interface Snapshot {
+interface PixelSnap {
+  kind: "pixels";
   layerId: number;
   width: number;
   height: number;
   pixels: Uint8Array;
 }
+interface Command {
+  kind: "command";
+  undo: () => void;
+  redo: () => void;
+}
+type Entry = PixelSnap | Command;
 
 export class History {
-  private undoStack: Snapshot[] = [];
-  private redoStack: Snapshot[] = [];
-  private limit = 30;
+  private undoStack: Entry[] = [];
+  private redoStack: Entry[] = [];
+  private limit = 40;
+  onChange: () => void = () => {};
 
-  /** Capture the current pixels of a layer (call before a destructive edit). */
+  /** Snapshot a layer's pixels before a destructive edit. */
   snapshot(layer: Layer): void {
     this.redoStack = [];
     this.undoStack.push(readLayer(layer));
-    if (this.undoStack.length > this.limit) this.undoStack.shift();
+    this.trim();
+    this.onChange();
+  }
+
+  /** Record a reversible structural change. */
+  pushCommand(undo: () => void, redo: () => void): void {
+    this.redoStack = [];
+    this.undoStack.push({ kind: "command", undo, redo });
+    this.trim();
+    this.onChange();
   }
 
   canUndo(): boolean {
@@ -34,45 +52,57 @@ export class History {
   }
 
   undo(getLayer: (id: number) => Layer | undefined): void {
-    const snap = this.undoStack.pop();
-    if (!snap) return;
-    const layer = getLayer(snap.layerId);
-    if (layer) {
-      this.redoStack.push(readLayer(layer));
-      writeLayer(layer, snap);
+    const e = this.undoStack.pop();
+    if (!e) return;
+    if (e.kind === "pixels") {
+      const layer = getLayer(e.layerId);
+      if (layer) {
+        this.redoStack.push(readLayer(layer));
+        writeLayer(layer, e);
+      } else this.redoStack.push(e);
+    } else {
+      e.undo();
+      this.redoStack.push(e);
     }
+    this.onChange();
   }
 
   redo(getLayer: (id: number) => Layer | undefined): void {
-    const snap = this.redoStack.pop();
-    if (!snap) return;
-    const layer = getLayer(snap.layerId);
-    if (layer) {
-      this.undoStack.push(readLayer(layer));
-      writeLayer(layer, snap);
+    const e = this.redoStack.pop();
+    if (!e) return;
+    if (e.kind === "pixels") {
+      const layer = getLayer(e.layerId);
+      if (layer) {
+        this.undoStack.push(readLayer(layer));
+        writeLayer(layer, e);
+      } else this.undoStack.push(e);
+    } else {
+      e.redo();
+      this.undoStack.push(e);
     }
+    this.onChange();
+  }
+
+  private trim(): void {
+    if (this.undoStack.length > this.limit) this.undoStack.shift();
   }
 }
 
-function readLayer(layer: Layer): Snapshot {
+function readLayer(layer: Layer): PixelSnap {
   const gl = ctx().gl;
   const rt = new RenderTarget(layer.width, layer.height, false);
-  // Draw the layer texture into a readable RGBA8 target.
   gl.bindFramebuffer(gl.FRAMEBUFFER, rt.fbo);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, layer.texture.tex, 0);
   const pixels = new Uint8Array(layer.width * layer.height * 4);
   gl.readPixels(0, 0, layer.width, layer.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   rt.dispose();
-  return { layerId: layer.id, width: layer.width, height: layer.height, pixels };
+  return { kind: "pixels", layerId: layer.id, width: layer.width, height: layer.height, pixels };
 }
 
-function writeLayer(layer: Layer, snap: Snapshot): void {
+function writeLayer(layer: Layer, snap: PixelSnap): void {
   const gl = ctx().gl;
   gl.bindTexture(gl.TEXTURE_2D, layer.texture.tex);
-  gl.texImage2D(
-    gl.TEXTURE_2D, 0, gl.RGBA8, snap.width, snap.height, 0,
-    gl.RGBA, gl.UNSIGNED_BYTE, snap.pixels
-  );
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, snap.width, snap.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, snap.pixels);
   gl.bindTexture(gl.TEXTURE_2D, null);
 }

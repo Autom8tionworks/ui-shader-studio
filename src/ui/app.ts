@@ -9,6 +9,7 @@ import { Layer } from "../core/layer";
 import { History } from "../core/history";
 import { composite, View } from "../core/compositor";
 import { cropDocument } from "../core/crop";
+import { downloadDocument } from "../core/exporter";
 import { Tool, PointerInfo } from "../tools/tool";
 import { BrushTool } from "../tools/brushTool";
 import { TransformTool } from "../tools/transformTool";
@@ -75,20 +76,16 @@ export class App {
     this.shape = new ShapeTool();
 
     this.tools = {
-      brush: this.brush,
-      eraser: this.eraser,
-      transform: this.transform,
-      select: this.select,
-      fill: this.fill,
-      gradient: this.gradient,
-      eyedropper: this.eyedropper,
-      text: this.text,
-      shape: this.shape
+      brush: this.brush, eraser: this.eraser, transform: this.transform, select: this.select,
+      fill: this.fill, gradient: this.gradient, eyedropper: this.eyedropper, text: this.text, shape: this.shape
     };
 
     this.viewport = new Viewport(canvas, this);
     this.fitView();
     this.rebuildUI();
+    this.wireTopbar();
+    this.history.onChange = () => this.updateTopbar();
+    this.updateTopbar();
     this.loop();
     window.addEventListener("keydown", (e) => this.onKey(e));
   }
@@ -111,6 +108,7 @@ export class App {
       doc: this.doc,
       requestRender: () => this.requestRender(),
       rebuildUI: () => this.rebuildUI(),
+      addLayer: (layer: Layer) => this.addLayerUndoable(layer),
       beginHistory: () => {
         const l = this.doc.activeLayer;
         if (l) this.history.snapshot(l);
@@ -129,7 +127,7 @@ export class App {
 
   dispatchPointer(kind: "down" | "move" | "up", p: PointerInfo): void {
     this.setMouse(p, kind === "down");
-    if (this.currentTool || kind !== "up") this.requestRender(); // keep iMouse live
+    if (this.currentTool || kind !== "up") this.requestRender();
     const tool = this.currentTool;
     if (!tool) return;
     const c = this.toolContext();
@@ -138,18 +136,69 @@ export class App {
     else tool.onPointerUp(p, c);
   }
 
-  // ---- layer ops ----
+  // ---- undo / redo ----
+  undo(): void {
+    this.history.undo((id) => this.doc.layers.find((l) => l.id === id));
+    this.requestRender();
+    this.rebuildUI();
+  }
+  redo(): void {
+    this.history.redo((id) => this.doc.layers.find((l) => l.id === id));
+    this.requestRender();
+    this.rebuildUI();
+  }
+
+  // ---- layer ops (undoable) ----
+  addLayerUndoable(layer: Layer, makeActive = true): void {
+    const doc = this.doc;
+    const prevActive = doc.activeLayerId;
+    doc.addLayer(layer, makeActive);
+    this.history.pushCommand(
+      () => {
+        doc.layers = doc.layers.filter((l) => l !== layer);
+        doc.activeLayerId = prevActive;
+        this.requestRender();
+        this.rebuildUI();
+      },
+      () => {
+        if (!doc.layers.includes(layer)) doc.layers.push(layer);
+        if (makeActive) doc.activeLayerId = layer.id;
+        this.requestRender();
+        this.rebuildUI();
+      }
+    );
+    this.requestRender();
+    this.rebuildUI();
+  }
+
   addBlankLayer(): void {
-    const l = new Layer(`Layer ${this.doc.layers.length + 1}`, this.doc.width, this.doc.height);
-    this.doc.addLayer(l, true);
-    this.requestRender();
-    this.rebuildUI();
+    this.addLayerUndoable(new Layer(`Layer ${this.doc.layers.length + 1}`, this.doc.width, this.doc.height));
   }
+
   deleteActiveLayer(): void {
-    if (this.doc.activeLayer) this.doc.removeLayer(this.doc.activeLayer.id);
-    this.requestRender();
-    this.rebuildUI();
+    const doc = this.doc;
+    const layer = doc.activeLayer;
+    if (!layer) return;
+    const index = doc.layers.indexOf(layer);
+    const prevActive = doc.activeLayerId;
+    const remove = () => {
+      doc.layers = doc.layers.filter((l) => l !== layer);
+      doc.activeLayerId = doc.layers.length ? doc.layers[doc.layers.length - 1].id : -1;
+      this.requestRender();
+      this.rebuildUI();
+    };
+    remove();
+    this.history.pushCommand(
+      () => {
+        if (!doc.layers.includes(layer)) doc.layers.splice(index, 0, layer);
+        doc.activeLayerId = prevActive;
+        this.requestRender();
+        this.rebuildUI();
+      },
+      remove
+    );
   }
+
   crop(x: number, y: number, w: number, h: number): void {
     cropDocument(this.doc, x, y, w, h);
     this.fitView();
@@ -166,6 +215,42 @@ export class App {
     this.requestRender();
   }
 
+  // ---- import ----
+  importImageDialog(): void {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = () => {
+      const f = input.files?.[0];
+      if (f) this.importImage(f);
+    };
+    input.click();
+  }
+
+  importImage(file: File): void {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const doc = this.doc;
+      const cv = document.createElement("canvas");
+      cv.width = doc.width;
+      cv.height = doc.height;
+      const g = cv.getContext("2d")!;
+      const scale = Math.min(doc.width / img.width, doc.height / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      g.drawImage(img, (doc.width - w) / 2, (doc.height - h) / 2, w, h);
+      const name = file.name.replace(/\.[^.]+$/, "").slice(0, 22) || "Imported";
+      this.addLayerUndoable(new Layer(name, doc.width, doc.height, cv), true);
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      alert("Could not load that image.");
+    };
+    img.src = url;
+  }
+
   fitView(): void {
     const stage = document.getElementById("stage")!;
     const r = stage.getBoundingClientRect();
@@ -176,25 +261,26 @@ export class App {
     this.requestRender();
   }
 
-  exportPNG(): void {
-    composite(this.doc, this.view, { mouse: this.mouse });
-    const src = document.getElementById("gl") as HTMLCanvasElement;
-    const a = document.createElement("a");
-    a.href = src.toDataURL("image/png");
-    a.download = "shader-studio.png";
-    a.click();
+  // ---- export (full document resolution) ----
+  export(format: "png" | "jpeg"): void {
+    composite(this.doc, this.view, { mouse: this.mouse }); // ensure accumulator is current
+    downloadDocument(this.doc, format);
     this.requestRender();
   }
 
   private onKey(e: KeyboardEvent): void {
     const mod = e.ctrlKey || e.metaKey;
     const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === "TEXTAREA" || tag === "INPUT") return; // don't steal typing
+    if (tag === "TEXTAREA" || tag === "INPUT") return;
     if (mod && e.key.toLowerCase() === "z") {
       e.preventDefault();
-      if (e.shiftKey) this.history.redo((id) => this.doc.layers.find((l) => l.id === id));
-      else this.history.undo((id) => this.doc.layers.find((l) => l.id === id));
-      this.requestRender();
+      if (e.shiftKey) this.redo();
+      else this.undo();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "y") {
+      e.preventDefault();
+      this.redo();
       return;
     }
     if (mod && e.key.toLowerCase() === "a") {
@@ -216,10 +302,30 @@ export class App {
     if (id) this.setTool(id);
   }
 
+  private wireTopbar(): void {
+    const on = (id: string, fn: () => void) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener("click", fn);
+    };
+    on("btn-import", () => this.importImageDialog());
+    on("btn-undo", () => this.undo());
+    on("btn-redo", () => this.redo());
+    on("btn-export-png", () => this.export("png"));
+    on("btn-export-jpg", () => this.export("jpeg"));
+  }
+
+  updateTopbar(): void {
+    const u = document.getElementById("btn-undo") as HTMLButtonElement | null;
+    const r = document.getElementById("btn-redo") as HTMLButtonElement | null;
+    if (u) u.disabled = !this.history.canUndo();
+    if (r) r.disabled = !this.history.canRedo();
+  }
+
   rebuildUI(): void {
     buildToolbar(document.getElementById("toolbar")!, this);
     buildProperties(document.getElementById("properties")!, this);
     buildLayersPanel(document.getElementById("layers")!, this);
+    this.updateTopbar();
   }
 
   private loop = (): void => {

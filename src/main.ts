@@ -3,9 +3,7 @@ import { App } from "./ui/app";
 
 function boot(): void {
   try {
-    const app = new App();
-    const exportBtn = document.getElementById("btn-export");
-    if (exportBtn) exportBtn.addEventListener("click", () => app.exportPNG());
+    new App();
   } catch (err) {
     const stage = document.getElementById("stage");
     if (stage) {

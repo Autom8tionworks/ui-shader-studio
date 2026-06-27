@@ -1,5 +1,6 @@
 /** Tool interface. Pointer coordinates are in DOCUMENT pixels (y-up), already mapped. */
 import { Document } from "../core/document";
+import { Layer } from "../core/layer";
 
 export interface PointerInfo {
   /** Document-space position, y-up, in pixels. */
@@ -15,6 +16,8 @@ export interface ToolContext {
   requestRender: () => void;
   beginHistory: () => void;
   rebuildUI: () => void;
+  /** Add a layer as an undoable action. */
+  addLayer: (layer: Layer) => void;
 }
 
 export interface Tool {

@@ -28,11 +28,9 @@ export class TextTool implements Tool {
   onPointerDown(p: PointerInfo, c: ToolContext): void {
     const doc = c.doc;
     const layer = new Layer(this.label(), doc.width, doc.height);
-    doc.addLayer(layer, true);
     this.lastLayerId = layer.id;
     this.render(layer, p.x, p.y);
-    c.requestRender();
-    c.rebuildUI();
+    c.addLayer(layer); // undoable; also re-renders + rebuilds UI
   }
 
   private label(): string {
