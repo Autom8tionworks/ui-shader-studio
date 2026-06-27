@@ -503,6 +503,8 @@ export class App {
     const tt = document.getElementById("tl-time");
     const frac = this.timeline.duration > 0 ? this.timeline.time / this.timeline.duration : 0;
     if (ph) ph.style.left = `calc(150px + ${frac} * (100% - 162px))`;
+    const knob = document.getElementById("tl-knob");
+    if (knob) knob.style.left = `${frac * 100}%`;
     if (tt) tt.textContent = `${this.timeline.time.toFixed(2)} / ${this.timeline.duration.toFixed(1)}s`;
   }
 }

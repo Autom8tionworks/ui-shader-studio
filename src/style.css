@@ -207,3 +207,22 @@ button:disabled:hover { border-color: var(--line); }
 .tl-key:hover { background: #ff6b6b; }
 .tl-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5252; pointer-events: none; box-shadow: 0 0 4px rgba(255,82,82,0.6); }
 .tl-hint { color: var(--muted); font-size: 11px; padding: 10px 14px; line-height: 1.5; }
+
+/* Timeline scrubber (click + drag) */
+.tl-scrubrow { display: flex; align-items: center; height: 26px; margin-bottom: 2px; }
+.tl-spacer { color: var(--muted); font-size: 10px; }
+.tl-scrubbar {
+  position: relative; flex: 1; height: 20px; margin-right: 12px;
+  background: #1b1b20; border: 1px solid var(--line); border-radius: 5px;
+  cursor: pointer; touch-action: none;
+}
+.tl-ticks { position: absolute; inset: 0; pointer-events: none; }
+.tl-tick { position: absolute; top: 3px; bottom: 3px; width: 1px; background: rgba(255,255,255,0.10); }
+.tl-knob {
+  position: absolute; top: 50%; left: 0; width: 12px; height: 22px;
+  transform: translate(-50%, -50%);
+  background: #ff5252; border: 1px solid #fff; border-radius: 3px;
+  cursor: ew-resize; box-shadow: 0 0 5px rgba(255,82,82,0.7); z-index: 3;
+}
+.tl-knob:hover { background: #ff6b6b; }
+body.tl-scrubbing { cursor: ew-resize; user-select: none; }

@@ -80,11 +80,36 @@ export function buildTimeline(root: HTMLElement, app: App): void {
   const body = document.createElement("div");
   body.className = "tl-body";
 
-  // ruler (scrub)
-  const ruler = document.createElement("div");
-  ruler.className = "tl-ruler";
-  ruler.onpointerdown = (e) => scrub(e, ruler, app);
-  body.appendChild(ruler);
+  // scrubber: a prominent, click-and-drag slide bar with a draggable knob
+  const scrubRow = document.createElement("div");
+  scrubRow.className = "tl-scrubrow";
+  const spacer = document.createElement("div");
+  spacer.className = "tl-label tl-spacer";
+  scrubRow.appendChild(spacer);
+
+  const scrubBar = document.createElement("div");
+  scrubBar.className = "tl-scrubbar";
+  scrubBar.title = "Click or drag to move the playhead";
+  scrubBar.onpointerdown = (e) => scrub(e, scrubBar, app);
+
+  const ticks = document.createElement("div");
+  ticks.className = "tl-ticks";
+  for (let i = 0; i <= 10; i++) {
+    const tk = document.createElement("div");
+    tk.className = "tl-tick";
+    tk.style.left = `${i * 10}%`;
+    ticks.appendChild(tk);
+  }
+  scrubBar.appendChild(ticks);
+
+  const knob = document.createElement("div");
+  knob.id = "tl-knob";
+  knob.className = "tl-knob";
+  knob.onpointerdown = (e) => { e.stopPropagation(); scrub(e, scrubBar, app); };
+  scrubBar.appendChild(knob);
+
+  scrubRow.appendChild(scrubBar);
+  body.appendChild(scrubRow);
 
   for (const ch of tl.channels) {
     body.appendChild(channelRow(ch, app));
@@ -145,7 +170,11 @@ function channelRow(ch: Channel, app: App): HTMLElement {
 
 function scrub(e: PointerEvent, el: HTMLElement, app: App): void {
   const tl = app.timeline;
+  e.preventDefault();
   const rect = el.getBoundingClientRect();
+  const wasPlaying = tl.playing;
+  tl.playing = false; // pause while scrubbing
+  document.body.classList.add("tl-scrubbing");
   const move = (clientX: number) => {
     const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     tl.time = frac * tl.duration;
@@ -154,10 +183,12 @@ function scrub(e: PointerEvent, el: HTMLElement, app: App): void {
     app.requestRender();
   };
   move(e.clientX);
-  const onMove = (ev: PointerEvent) => move(ev.clientX);
+  const onMove = (ev: PointerEvent) => { ev.preventDefault(); move(ev.clientX); };
   const onUp = () => {
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
+    document.body.classList.remove("tl-scrubbing");
+    if (wasPlaying) { tl.playing = true; app.requestRender(); }
   };
   window.addEventListener("pointermove", onMove);
   window.addEventListener("pointerup", onUp);
