@@ -20,6 +20,8 @@ export interface ToolContext {
   addLayer: (layer: Layer) => void;
   /** Current view zoom (drawing-buffer px per document px) for screen-accurate hit-testing. */
   zoom: number;
+  /** Switch back to the default Select/Move tool (after a one-shot tool). */
+  returnToSelect: () => void;
 }
 
 export interface Tool {

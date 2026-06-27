@@ -25,6 +25,7 @@ export class EyedropperTool implements Tool {
     rt.dispose();
     this.onPick([px[0] / 255, px[1] / 255, px[2] / 255]);
     c.requestRender();
+    c.returnToSelect();
   }
 
   onPointerMove(): void {}

@@ -4,7 +4,7 @@
  * heart, arrow) and shaded "3D-looking" shapes (cube, sphere, cylinder, cone, pyramid)
  * rendered with Canvas2D gradients/face shading. Previews live from a pixel snapshot.
  */
-import { rasterOnLayer } from "./raster";
+import { Layer } from "../core/layer";
 import { Tool, PointerInfo, ToolContext } from "./tool";
 
 export type ShapeKind =
@@ -43,44 +43,43 @@ export class ShapeTool implements Tool {
   fill = true;
 
   private start: { x: number; y: number } | null = null;
-  private snapshot: ImageData | null = null;
+  private layer: Layer | null = null;
   private dragging = false;
 
   onPointerDown(p: PointerInfo, c: ToolContext): void {
-    if (!c.doc.activeLayer) return;
-    c.beginHistory();
+    const doc = c.doc;
+    // Each shape becomes its own object on a new layer (selectable + movable afterward).
+    this.layer = new Layer(`Shape: ${this.kind}`, doc.width, doc.height);
+    c.addLayer(this.layer);
     this.dragging = true;
     this.start = { x: p.x, y: p.y };
   }
 
   onPointerMove(p: PointerInfo, c: ToolContext): void {
-    if (!this.dragging || !this.start) return;
-    this.draw(this.start, p, c);
+    if (!this.dragging || !this.start || !this.layer) return;
+    this.render(this.layer, this.start, p, c);
     c.requestRender();
   }
 
   onPointerUp(p: PointerInfo, c: ToolContext): void {
-    if (!this.dragging || !this.start) return;
-    this.draw(this.start, p, c);
+    if (!this.dragging || !this.start || !this.layer) { this.dragging = false; return; }
+    this.render(this.layer, this.start, p, c);
     this.dragging = false;
     this.start = null;
-    this.snapshot = null;
+    this.layer = null;
     c.requestRender();
+    c.returnToSelect();
   }
 
-  private draw(a: { x: number; y: number }, b: PointerInfo, c: ToolContext): void {
-    const layer = c.doc.activeLayer!;
-    let snap = this.snapshot;
-    rasterOnLayer(layer, (g, w, h, cy) => {
-      if (!snap) {
-        snap = g.getImageData(0, 0, w, h);
-        this.snapshot = snap;
-      } else {
-        g.putImageData(snap, 0, 0);
-      }
-      const ends = { ax: a.x, ay: cy(a.y), bx: b.x, by: cy(b.y) };
-      drawShape(g, this.kind, this.color, this.fill, this.lineWidth, ends);
-    });
+  /** Draw the shape onto a fresh transparent canvas and upload it to the object's own layer. */
+  private render(layer: Layer, a: { x: number; y: number }, b: PointerInfo, c: ToolContext): void {
+    const w = c.doc.width, h = c.doc.height;
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    const g = cv.getContext("2d")!;
+    const ends = { ax: a.x, ay: h - a.y, bx: b.x, by: h - b.y };
+    drawShape(g, this.kind, this.color, this.fill, this.lineWidth, ends);
+    layer.texture.upload(cv, w, h);
   }
 }
 

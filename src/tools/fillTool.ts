@@ -48,6 +48,7 @@ export class FillTool implements Tool {
     layer.copyInto(layer.texture, doc.brushScratch);
     if (temp) temp.dispose();
     c.requestRender();
+    c.returnToSelect();
   }
 
   onPointerMove(): void {}

@@ -43,6 +43,7 @@ export class GradientTool implements Tool {
     this.origin.dispose();
     this.origin = null;
     c.requestRender();
+    c.returnToSelect();
   }
 
   private apply(a: { x: number; y: number }, b: PointerInfo, c: ToolContext): void {

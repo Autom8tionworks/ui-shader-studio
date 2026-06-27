@@ -24,6 +24,7 @@ import { EyedropperTool } from "../tools/eyedropperTool";
 import { TextTool } from "../tools/textTool";
 import { ShapeTool } from "../tools/shapeTool";
 import { CropTool } from "../tools/cropTool";
+import { LassoTool } from "../tools/lassoTool";
 import { Viewport } from "./viewport";
 import { buildToolbar } from "./toolbar";
 import { buildLayersPanel } from "./layersPanel";
@@ -48,7 +49,8 @@ export class App {
   text: TextTool;
   shape: ShapeTool;
   cropTool: CropTool;
-  currentToolId = "brush";
+  lasso: LassoTool;
+  currentToolId = "transform";
 
   private dirty = true;
   private viewport: Viewport;
@@ -82,10 +84,11 @@ export class App {
     this.text = new TextTool();
     this.shape = new ShapeTool();
     this.cropTool = new CropTool();
+    this.lasso = new LassoTool();
 
     this.tools = {
       brush: this.brush, eraser: this.eraser, transform: this.transform, select: this.select,
-      fill: this.fill, gradient: this.gradient, eyedropper: this.eyedropper, text: this.text, shape: this.shape, crop: this.cropTool
+      fill: this.fill, gradient: this.gradient, eyedropper: this.eyedropper, text: this.text, shape: this.shape, crop: this.cropTool, lasso: this.lasso
     };
 
     this.viewport = new Viewport(canvas, this);
@@ -122,6 +125,7 @@ export class App {
       rebuildUI: () => this.rebuildUI(),
       addLayer: (layer: Layer) => this.addLayerUndoable(layer),
       zoom: this.view.zoom,
+      returnToSelect: () => this.setTool("transform"),
       beginHistory: () => {
         const l = this.doc.activeLayer;
         if (l) this.history.snapshot(l);
@@ -580,7 +584,7 @@ export class App {
     if (mod) return;
     const map: Record<string, string> = {
       b: "brush", e: "eraser", v: "transform", c: "crop", m: "select",
-      g: "gradient", k: "fill", i: "eyedropper", t: "text", u: "shape", s: "shader"
+      g: "gradient", k: "fill", i: "eyedropper", t: "text", u: "shape", s: "shader", l: "lasso"
     };
     const id = map[e.key.toLowerCase()];
     if (id) this.setTool(id);

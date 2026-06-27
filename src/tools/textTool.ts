@@ -31,6 +31,7 @@ export class TextTool implements Tool {
     this.lastLayerId = layer.id;
     this.render(layer, p.x, p.y);
     c.addLayer(layer); // undoable; also re-renders + rebuilds UI
+    c.returnToSelect();
   }
 
   private label(): string {

@@ -33,9 +33,10 @@ export function buildProperties(root: HTMLElement, app: App): void {
 const TOOL_DESC: Record<string, string> = {
   brush: "Paint onto the active layer (or its mask). Tune size, edge hardness, flow and color.",
   eraser: "Erase pixels from the active layer with a soft round brush.",
-  transform: "Move, scale and rotate the active layer. Commits when you release.",
+  transform: "Click an object to select it, then drag to move it. Shift+drag scales, Alt+drag rotates.",
   crop: "Trim the document (and every layer) to a rectangle.",
-  select: "Make a selection — rectangle, ellipse, lasso or magic wand. Edits stay inside it.",
+  select: "Marquee a rectangular/elliptical pixel region (for masks, fill and gradient).",
+  lasso: "Trace around an object — the path snaps to its edges. Painting/fill stay inside it.",
   fill: "Flood-fill a region by color, or fill the whole selection with a solid color.",
   gradient: "Drag to paint a linear gradient between two colors, clipped to the selection.",
   eyedropper: "Click the canvas to sample a color into the brush, fill and shape tools.",
@@ -55,13 +56,16 @@ function toolSection(root: HTMLElement, app: App): void {
       brushOptions(root, app, app.eraser, false);
       break;
     case "transform":
-      note(root, "Drag to move. Shift+drag to scale. Alt+drag to rotate. Commits on release.");
+      note(root, "Click an object on the canvas to select it, then drag to move. Shift+drag = scale, Alt+drag = rotate.");
       break;
     case "crop":
       cropOptions(root, app);
       break;
     case "select":
       selectOptions(root, app);
+      break;
+    case "lasso":
+      lassoOptions(root, app);
       break;
     case "fill":
       fillOptions(root, app);
@@ -86,8 +90,8 @@ function toolSection(root: HTMLElement, app: App): void {
 
 function toolTitle(id: string): string {
   const m: Record<string, string> = {
-    brush: "Brush", eraser: "Eraser", transform: "Transform", crop: "Crop",
-    select: "Selection", fill: "Fill", gradient: "Gradient", eyedropper: "Eyedropper",
+    brush: "Brush", eraser: "Eraser", transform: "Select / Move", crop: "Crop",
+    select: "Marquee", lasso: "Lasso", fill: "Fill", gradient: "Gradient", eyedropper: "Eyedropper",
     text: "Text", shape: "Shape", shader: "Shader Filter (ShaderToy)"
   };
   return m[id] ?? "Tool";
@@ -118,11 +122,20 @@ function cropOptions(root: HTMLElement, app: App): void {
   note(root, "Origin is bottom-left, in document pixels.");
 }
 
+function lassoOptions(root: HTMLElement, app: App): void {
+  checkbox(root, "Magnetic (snap to edges)", app.lasso.magnetic, (on) => { app.lasso.magnetic = on; });
+  slider(root, "Snap radius", app.lasso.radius, 4, 40, 1, (v) => { app.lasso.radius = v; });
+  actions(root, [
+    ghost("Select All", () => app.selectAll()),
+    ghost("Deselect", () => app.deselect())
+  ]);
+  note(root, "Trace around an object and release to close the selection. Snaps to the nearest edges.");
+}
+
 function selectOptions(root: HTMLElement, app: App): void {
   const modes: { id: SelectMode; label: string }[] = [
     { id: "rect", label: "Rectangle" },
     { id: "ellipse", label: "Ellipse" },
-    { id: "lasso", label: "Lasso" },
     { id: "wand", label: "Magic Wand" }
   ];
   segmented(root, "Mode", modes.map((m) => m.label), modes.findIndex((m) => m.id === app.select.mode), (i) => {
