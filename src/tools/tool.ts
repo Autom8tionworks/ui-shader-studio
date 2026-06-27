@@ -18,6 +18,8 @@ export interface ToolContext {
   rebuildUI: () => void;
   /** Add a layer as an undoable action. */
   addLayer: (layer: Layer) => void;
+  /** Current view zoom (drawing-buffer px per document px) for screen-accurate hit-testing. */
+  zoom: number;
 }
 
 export interface Tool {

@@ -104,12 +104,17 @@ function brushOptions(root: HTMLElement, app: App, tool: import("../tools/brushT
 
 function cropOptions(root: HTMLElement, app: App): void {
   const doc = app.doc;
-  const state = { x: 0, y: 0, w: doc.width, h: doc.height };
-  numberRow(root, "Left", state.x, (v) => (state.x = v));
-  numberRow(root, "Bottom", state.y, (v) => (state.y = v));
-  numberRow(root, "Width", state.w, (v) => (state.w = v));
-  numberRow(root, "Height", state.h, (v) => (state.h = v));
-  actions(root, [primary("Apply Crop", () => app.crop(state.x, state.y, state.w, state.h))]);
+  if (!app.cropTool.rect) app.cropTool.rect = { x: 0, y: 0, w: doc.width, h: doc.height };
+  const r = app.cropTool.rect;
+  note(root, "Drag on the canvas to set the crop box. Drag its handles to resize, or inside it to move.");
+  numberRow(root, "Left", Math.round(r.x), (v) => { r.x = v; app.requestRender(); });
+  numberRow(root, "Bottom", Math.round(r.y), (v) => { r.y = v; app.requestRender(); });
+  numberRow(root, "Width", Math.round(r.w), (v) => { r.w = v; app.requestRender(); });
+  numberRow(root, "Height", Math.round(r.h), (v) => { r.h = v; app.requestRender(); });
+  actions(root, [
+    primary("Apply Crop", () => { if (r.w >= 1 && r.h >= 1) app.crop(r.x, r.y, r.w, r.h); }),
+    ghost("Reset", () => { app.cropTool.rect = { x: 0, y: 0, w: app.doc.width, h: app.doc.height }; app.requestRender(); app.rebuildUI(); })
+  ]);
   note(root, "Origin is bottom-left, in document pixels.");
 }
 

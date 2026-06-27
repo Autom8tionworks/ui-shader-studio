@@ -30,6 +30,7 @@ export interface View {
 
 export interface FrameInput {
   mouse: [number, number, number, number];
+  crop?: { x: number; y: number; w: number; h: number } | null;
 }
 
 const PRESENT_FRAG = /* glsl */ `#version 300 es
@@ -82,6 +83,58 @@ void main() {
           + abs(m - texture(u_sel, uv + vec2(0.0, u_texel.y)).r);
   if (e > 0.2) { frag = vec4(1.0, 1.0, 1.0, 1.0); return; }   // border
   if (m < 0.5) { frag = vec4(0.0, 0.0, 0.0, 0.28); return; }  // dim unselected
+  frag = vec4(0.0);
+}
+`;
+
+const CROP_OVERLAY = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 frag;
+uniform vec2  u_viewport;
+uniform vec2  u_docSize;
+uniform vec2  u_offset;
+uniform float u_zoom;
+uniform vec4  u_rect; // x0,y0,x1,y1 in document px (y-up)
+void main() {
+  vec2 screenPx = v_uv * u_viewport;
+  vec2 d = (screenPx - u_offset) / u_zoom;
+  bool inDoc = d.x >= 0.0 && d.x <= u_docSize.x && d.y >= 0.0 && d.y <= u_docSize.y;
+  if (!inDoc) { frag = vec4(0.0); return; }
+  float x0 = u_rect.x, y0 = u_rect.y, x1 = u_rect.z, y1 = u_rect.w;
+  bool inside = d.x >= x0 && d.x <= x1 && d.y >= y0 && d.y <= y1;
+
+  float t = 1.5;
+  float padX = 2.0 / u_zoom, padY = 2.0 / u_zoom;
+  bool withinX = d.x >= x0 - padX && d.x <= x1 + padX;
+  bool withinY = d.y >= y0 - padY && d.y <= y1 + padY;
+  bool nearL = abs((d.x - x0) * u_zoom) < t, nearR = abs((d.x - x1) * u_zoom) < t;
+  bool nearT = abs((d.y - y1) * u_zoom) < t, nearB = abs((d.y - y0) * u_zoom) < t;
+  bool border = ((nearL || nearR) && withinY) || ((nearT || nearB) && withinX);
+
+  float hs = 5.0;
+  vec2 cs[8];
+  cs[0] = vec2(x0, y0); cs[1] = vec2(x1, y0); cs[2] = vec2(x0, y1); cs[3] = vec2(x1, y1);
+  cs[4] = vec2((x0 + x1) * 0.5, y0); cs[5] = vec2((x0 + x1) * 0.5, y1);
+  cs[6] = vec2(x0, (y0 + y1) * 0.5); cs[7] = vec2(x1, (y0 + y1) * 0.5);
+  bool handle = false;
+  for (int i = 0; i < 8; i++) {
+    vec2 dd = (d - cs[i]) * u_zoom;
+    if (abs(dd.x) < hs && abs(dd.y) < hs) handle = true;
+  }
+
+  bool thirds = false;
+  if (inside) {
+    float va = x0 + (x1 - x0) / 3.0, vb = x0 + 2.0 * (x1 - x0) / 3.0;
+    float ha = y0 + (y1 - y0) / 3.0, hb = y0 + 2.0 * (y1 - y0) / 3.0;
+    if (abs((d.x - va) * u_zoom) < 0.8 || abs((d.x - vb) * u_zoom) < 0.8 ||
+        abs((d.y - ha) * u_zoom) < 0.8 || abs((d.y - hb) * u_zoom) < 0.8) thirds = true;
+  }
+
+  if (handle) { frag = vec4(1.0, 1.0, 1.0, 1.0); return; }
+  if (border) { frag = vec4(1.0, 1.0, 1.0, 1.0); return; }
+  if (thirds) { frag = vec4(0.3, 0.3, 0.3, 0.3); return; } // premultiplied
+  if (!inside) { frag = vec4(0.0, 0.0, 0.0, 0.55); return; }
   frag = vec4(0.0);
 }
 `;
@@ -140,6 +193,24 @@ export function composite(doc: Document, view: View, frame?: FrameInput): void {
         u_offset: [offX, offY],
         u_zoom: view.zoom,
         u_texel: [1 / doc.width, 1 / doc.height]
+      },
+      target: null,
+      screenSize: [vw, vh],
+      blend: true
+    });
+  }
+
+  if (frame?.crop) {
+    const cr = frame.crop;
+    runPass({
+      vert: QUAD_VERT,
+      frag: CROP_OVERLAY,
+      uniforms: {
+        u_viewport: [vw, vh],
+        u_docSize: [doc.width, doc.height],
+        u_offset: [offX, offY],
+        u_zoom: view.zoom,
+        u_rect: [cr.x, cr.y, cr.x + cr.w, cr.y + cr.h]
       },
       target: null,
       screenSize: [vw, vh],

@@ -23,6 +23,7 @@ import { GradientTool } from "../tools/gradientTool";
 import { EyedropperTool } from "../tools/eyedropperTool";
 import { TextTool } from "../tools/textTool";
 import { ShapeTool } from "../tools/shapeTool";
+import { CropTool } from "../tools/cropTool";
 import { Viewport } from "./viewport";
 import { buildToolbar } from "./toolbar";
 import { buildLayersPanel } from "./layersPanel";
@@ -46,6 +47,7 @@ export class App {
   eyedropper: EyedropperTool;
   text: TextTool;
   shape: ShapeTool;
+  cropTool: CropTool;
   currentToolId = "brush";
 
   private dirty = true;
@@ -79,10 +81,11 @@ export class App {
     };
     this.text = new TextTool();
     this.shape = new ShapeTool();
+    this.cropTool = new CropTool();
 
     this.tools = {
       brush: this.brush, eraser: this.eraser, transform: this.transform, select: this.select,
-      fill: this.fill, gradient: this.gradient, eyedropper: this.eyedropper, text: this.text, shape: this.shape
+      fill: this.fill, gradient: this.gradient, eyedropper: this.eyedropper, text: this.text, shape: this.shape, crop: this.cropTool
     };
 
     this.viewport = new Viewport(canvas, this);
@@ -102,6 +105,9 @@ export class App {
 
   setTool(id: string): void {
     this.currentToolId = id;
+    if (id === "crop" && !this.cropTool.rect) {
+      this.cropTool.rect = { x: 0, y: 0, w: this.doc.width, h: this.doc.height };
+    }
     this.rebuildUI();
   }
 
@@ -115,6 +121,7 @@ export class App {
       requestRender: () => this.requestRender(),
       rebuildUI: () => this.rebuildUI(),
       addLayer: (layer: Layer) => this.addLayerUndoable(layer),
+      zoom: this.view.zoom,
       beginHistory: () => {
         const l = this.doc.activeLayer;
         if (l) this.history.snapshot(l);
@@ -207,6 +214,7 @@ export class App {
 
   crop(x: number, y: number, w: number, h: number): void {
     cropDocument(this.doc, x, y, w, h);
+    this.cropTool.rect = { x: 0, y: 0, w: this.doc.width, h: this.doc.height };
     this.fitView();
     this.requestRender();
     this.rebuildUI();
@@ -528,7 +536,10 @@ export class App {
 
     if (this.dirty) {
       this.viewport.resizeToDisplay();
-      composite(this.doc, this.view, { mouse: this.mouse });
+      composite(this.doc, this.view, {
+        mouse: this.mouse,
+        crop: this.currentToolId === "crop" ? this.cropTool.rect : null
+      });
       this.dirty = false;
     }
     requestAnimationFrame(this.loop);
